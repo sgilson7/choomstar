@@ -292,7 +292,7 @@ impl Player {
 
     /// Back at its spawn, as new, keeping its look speed, its pilot and its
     /// shooting's counts.
-    fn respawn(&mut self) {
+    pub fn respawn(&mut self) {
         let (pct, pilot, shooting, skin, out, lifelike) = (
             self.aim.pct,
             self.pilot,
@@ -417,6 +417,9 @@ pub struct Rules {
     pub hunt: bool,
     /// a felled bot and a felled target stay down
     pub stay_down: bool,
+    /// the reset key does not stand you back at your spawn (the mission
+    /// takes it to start again)
+    pub no_reset: bool,
 }
 
 /// A straw target's height to its head (m).
@@ -918,6 +921,7 @@ impl World {
         let mut moved: Vec<Heard> = Vec::new();
         // online (M4), Backspace does not stand you back at your spawn whole
         let online = self.online;
+        let no_reset = self.rules.no_reset;
         let inside = self.map.inside();
         let held = Rc::clone(&self.map);
         let vines = &held.vines;
@@ -945,7 +949,7 @@ impl World {
                     }
                     continue;
                 }
-                if input.key(RESET) && !online {
+                if input.key(RESET) && !online && !no_reset {
                     p.respawn();
                     continue;
                 }
@@ -1221,6 +1225,34 @@ impl World {
             }
         }
         false
+    }
+
+    /// Choomstar: `dmg` to seat `k` from something that is not a seat (an
+    /// orb, a foe's touch) at `from`. Whether it fell.
+    pub fn strike(&mut self, k: usize, dmg: i32, from: V3) -> bool {
+        let stay = self.rules.stay_down;
+        let p = &mut self.players[k];
+        if !p.alive() || p.out {
+            return false;
+        }
+        p.hurt.struck(p.health, dmg, Some(from));
+        p.health -= dmg;
+        p.flash = FLASH;
+        let at = p.body.origin;
+        let fell = p.health <= 0;
+        if fell {
+            p.health = 0;
+            p.dead = if stay { DOWN_FOR_ROUND } else { RESPAWN };
+            p.swing = None;
+            p.hook = None;
+            p.pinned = 0;
+        }
+        self.heard.push(Heard {
+            voice: Voice::Hurt,
+            at,
+            by: k,
+        });
+        fell
     }
 
     fn mark(&mut self, at: V3, normal: V3) {

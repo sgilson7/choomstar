@@ -544,4 +544,4 @@ Not: world, act
 
 A slow figure in a Horde mission that hurts anyone within melee reach.
 
-Not: undead, walker, monster
+Not: undead, monster

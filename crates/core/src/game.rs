@@ -42,6 +42,10 @@ pub enum Screen {
     Online,
     /// T32: building playlists of maps
     Playlists,
+    /// Choomstar: the chart and the mission list, a mission's briefing
+    Missions,
+    /// Choomstar: a mission's end
+    Results,
 }
 
 impl Screen {
@@ -54,6 +58,8 @@ impl Screen {
             Screen::Settings => "settings",
             Screen::Online => "online",
             Screen::Playlists => "playlists",
+            Screen::Missions => "missions",
+            Screen::Results => "results",
         }
     }
 }
@@ -146,6 +152,16 @@ pub struct Game {
     /// the volume, percent (a setting)
     pub sounds: Vec<crate::sound::Play>,
     pub volume_pct: i32,
+    /// Choomstar: the mission under way, its last end and the best before
+    /// it, the best on each mission, and the one the list has picked
+    pub mission: Option<crate::mission::Run>,
+    pub ended: Option<(crate::mission::Outcome, crate::mission::Best)>,
+    pub progress: crate::mission::Progress,
+    pub picked: usize,
+    /// the save's status key when one was refused (kits/saves)
+    pub save_status: &'static str,
+    /// the reset key was held last tick (a press restarts a mission)
+    reset_held: bool,
 }
 
 impl Game {
@@ -205,6 +221,12 @@ impl Game {
             random_weapons: false,
             editing: 0,
             rng: crate::rng::Rng::new(seed as u64 ^ PLAN_SALT),
+            mission: None,
+            ended: None,
+            progress: crate::mission::Progress::new(),
+            picked: 0,
+            save_status: "",
+            reset_held: false,
         };
         g.draw();
         Ok(g)
@@ -276,6 +298,30 @@ impl Game {
                 };
                 self.world.step(&[Input::from_page(*b, m)]);
                 self.hear();
+                // Choomstar: the mission's rules after the world's tick; a
+                // press of the reset key starts it again (CM-Q18)
+                let reset = *b & crate::input::RESET != 0;
+                let fresh = reset && !self.reset_held;
+                self.reset_held = reset;
+                if fresh {
+                    if let Some(k) = self.mission.as_ref().map(|r| r.k) {
+                        self.start_mission(k);
+                        break;
+                    }
+                }
+                if let Some(run) = self.mission.as_mut() {
+                    run.step(&mut self.world, *b);
+                    if let Some(o) = run.outcome {
+                        let spec = run.spec();
+                        let before = self.progress.get(&spec.id).copied().unwrap_or_default();
+                        if o.cleared {
+                            crate::mission::record(&mut self.progress, spec, o.score);
+                        }
+                        self.ended = Some((o, before));
+                        self.show(Screen::Results);
+                        break;
+                    }
+                }
             }
             self.alpha = self.clock.alpha();
             self.follow_hud();
@@ -627,6 +673,9 @@ impl Game {
             crate::skins::draw(&mut moving, &figure, &self.look);
         }
         self.draw_lineup(&mut moving);
+        if let Some(run) = &self.mission {
+            run.draw(self.alpha, &self.look, &mut moving);
+        }
         crate::render::keep_visible(&mut moving.list, cam.eye);
         self.frame = Frame::build(&self.scene, &moving, &cam, self.aspect);
     }
@@ -645,6 +694,7 @@ impl Game {
     /// turn; it runs as an online match does, without the links.
     fn bots_match(&mut self) {
         self.leave_online();
+        self.mission = None;
         let mut skins = [self.skin, 0, 0, 0];
         // the bots wear the skins you do not
         let mut free = (0..crate::skins::COUNT as u8).filter(|k| *k != self.skin);
@@ -675,8 +725,13 @@ impl Game {
         crate::plan::Plan::draw(&maps, self.shuffle, self.random_weapons, &mut self.rng)
     }
 
-    /// T32: the choices the page keeps between visits, as one string.
+    /// Choomstar: the save's text, which the page keeps (kits/saves).
     pub fn saved(&self) -> String {
+        crate::save::store(&self.save())
+    }
+
+    /// T32: the choices the page keeps between visits, as one string.
+    pub fn saved_prefs(&self) -> String {
         serde_json::json!({
             "playlists": self.playlists,
             "playlist": self.playlist,
@@ -714,8 +769,49 @@ impl Game {
         self.editing = 0;
     }
 
+    /// Choomstar: mission `k` from its start.
+    pub fn start_mission(&mut self, k: usize) {
+        let (run, mut w) = crate::mission::Run::start(k, self.skin, self.lifelike);
+        w.skill = self.skill;
+        for p in &mut w.players {
+            p.aim.pct = self.look_pct;
+        }
+        self.world = w;
+        self.mission = Some(run);
+        self.picked = k;
+        self.matched = false;
+        self.reset_held = true;
+        self.clock.rest();
+        self.show(Screen::Play);
+        self.ui_version += 1;
+    }
+
+    /// Choomstar: the save: the kept choices and every mission's best.
+    pub fn save(&self) -> crate::save::Save {
+        crate::save::Save {
+            version: crate::save::VERSION,
+            prefs: self.saved_prefs(),
+            missions: self.progress.clone(),
+        }
+    }
+
+    /// Choomstar: a save handed back by the page (kits/saves).
+    fn load_save(&mut self, text: &str) {
+        match crate::save::load(text) {
+            crate::save::Loaded::Ready(s) => {
+                self.load_saved(&s.prefs);
+                self.progress = s.missions;
+                self.save_status = "";
+            }
+            crate::save::Loaded::Fresh => {}
+            crate::save::Loaded::Refused { why, .. } => self.save_status = why,
+        }
+        self.ui_version += 1;
+    }
+
     /// The practice room from its start, its bot moving only or shooting.
     fn practice(&mut self, bot: Bot) {
+        self.mission = None;
         self.matched = false;
         self.bot = bot;
         self.world = World::room(bot);
@@ -826,12 +922,46 @@ impl Game {
         let v = value.trim();
         match name {
             "title.begin" => self.show(Screen::Menu),
+            "menu.missions" | "results.chart" => {
+                self.mission = None;
+                self.show(Screen::Missions);
+                self.ui_version += 1;
+            }
+            "mission.pick" => {
+                let k: usize = v.parse().map_err(|_| format!("\"{value}\" is not a mission."))?;
+                if k >= crate::mission::pack().missions.len() {
+                    return Err(format!("There is no mission {k}."));
+                }
+                self.picked = k;
+                self.ui_version += 1;
+            }
+            "mission.start" => {
+                let spec = &crate::mission::pack().missions[self.picked];
+                if !crate::mission::open(spec, &self.progress) {
+                    return Err(self.strings.get("mission_locked"));
+                }
+                self.start_mission(self.picked);
+            }
+            "mission.retry" => self.start_mission(self.picked),
+            "mission.next" => {
+                let all = &crate::mission::pack().missions;
+                let next = (1..=all.len())
+                    .map(|d| (self.picked + d) % all.len())
+                    .find(|&k| crate::mission::open(&all[k], &self.progress) && self.progress.get(&all[k].id).is_none_or(|b| b.medal < crate::mission::GOLD));
+                self.picked = next.unwrap_or(self.picked);
+                self.mission = None;
+                self.show(Screen::Missions);
+                self.ui_version += 1;
+            }
+            "save.load" => self.load_save(v),
             "menu.practice" => self.practice(Bot::Moves),
             "menu.duel" => self.practice(Bot::Shoots),
             "menu.bots" => self.bots_match(),
             "play.resume" => self.show(Screen::Play),
             "play.restart" => {
-                if self.versus.is_none() {
+                if let Some(k) = self.mission.as_ref().map(|r| r.k) {
+                    self.start_mission(k);
+                } else if self.versus.is_none() {
                     if self.matched {
                         self.bots_match()
                     } else {
@@ -870,6 +1000,7 @@ impl Game {
             }
             "screen.menu" => {
                 self.leave_online();
+                self.mission = None;
                 self.show(Screen::Menu)
             }
             // M4: online play
@@ -1044,6 +1175,11 @@ impl Game {
                 Screen::Paused => self.show(Screen::Play),
                 Screen::Settings => self.show(self.settings_from),
                 Screen::Playlists => self.show(Screen::Menu),
+                Screen::Missions => self.show(Screen::Menu),
+                Screen::Results => {
+                    self.mission = None;
+                    self.show(Screen::Missions)
+                }
                 Screen::Online if self.versus.is_none() => self.show(Screen::Menu),
                 _ => {}
             },
@@ -2196,10 +2332,13 @@ pub(crate) mod tests {
         }
         g.act("plan.playlist", "1").unwrap();
         g.act("plan.weapons", "1").unwrap();
+        // Choomstar: and each mission's best, all in the save (kits/saves)
+        crate::mission::record(&mut g.progress, &crate::mission::pack().missions[0], 1500);
         let kept = crate::api::ui(&g).saved;
         let mut next = game();
-        next.act("prefs.load", &kept).unwrap();
+        next.act("save.load", &kept).unwrap();
         assert_eq!(next.playlists, vec![vec![4, 4, 10]]);
+        assert_eq!(next.progress, g.progress);
         assert_eq!(
             (next.playlist, next.shuffle, next.random_weapons),
             (1, false, true)

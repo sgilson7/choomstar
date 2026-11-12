@@ -13,9 +13,8 @@
 //! `DROPPED` with the reason, because the loader refuses fields it does not
 //! know.
 //!
-//! The example `Save` is a small idle game's: wood, and a level per skill.
-//! Replace it with the project's own; keep `load`, `store`, `migrate` and the
-//! tests.
+//! Choomstar's save: Chumontillado's kept choices (`prefs`, the text its
+//! `Game::saved` wrote) and the best medal and score on each mission.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -23,12 +22,12 @@ use std::collections::BTreeMap;
 
 /// The shape this build writes. Bump it, and add a step to `migrate`,
 /// whenever a field is added, renamed, moved or removed.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 1;
 
 /// Fields an old save holds that a migration removed or changed on purpose,
 /// each with the version that did it and why. Every other field comes back
 /// from loading with the value the old save held.
-pub const DROPPED: &[(&str, u32, &str)] = &[("level", 2, "moved into skills.woodcutting")];
+pub const DROPPED: &[(&str, u32, &str)] = &[];
 
 /// Status keys. Each has a string in `data/` under the same key.
 pub const UNREADABLE: &str = "save.unreadable";
@@ -41,8 +40,10 @@ pub const NO_STEP: &str = "save.no_step";
 #[serde(default, deny_unknown_fields)]
 pub struct Save {
     pub version: u32,
-    pub wood: u64,
-    pub skills: BTreeMap<String, u32>,
+    /// Chumontillado's kept choices (playlists, order, weapons), as its text
+    pub prefs: String,
+    /// each mission's best, by id
+    pub missions: BTreeMap<String, crate::mission::Best>,
 }
 
 /// What came back from the page's storage or a file the player chose.
@@ -74,16 +75,10 @@ pub fn store(save: &Save) -> String {
 
 /// One step from a save of version `from` to `from + 1`. Pure: it reads the
 /// old fields and writes the new ones.
-fn migrate(from: u32, mut v: Map<String, Value>) -> Option<Map<String, Value>> {
-    match from {
-        // version 2 moved the one level into a level per skill
-        1 => {
-            let level = v.remove("level").unwrap_or(json!(1));
-            v.insert("skills".into(), json!({ "woodcutting": level }));
-            Some(v)
-        }
-        _ => None,
-    }
+fn migrate(from: u32, v: Map<String, Value>) -> Option<Map<String, Value>> {
+    // version 1 is the first; a later version adds its step here
+    let _ = (from, v);
+    None
 }
 
 pub fn load(text: &str) -> Loaded {
@@ -120,15 +115,16 @@ pub fn load(text: &str) -> Loaded {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mission::{Best, GOLD, SILVER};
 
     fn sample() -> Save {
-        let mut skills = BTreeMap::new();
-        skills.insert("woodcutting".to_string(), 12);
-        skills.insert("fletching".to_string(), 3);
+        let mut missions = BTreeMap::new();
+        missions.insert("first_light".to_string(), Best { medal: GOLD, score: 1500 });
+        missions.insert("plaza_run".to_string(), Best { medal: SILVER, score: 2600 });
         Save {
             version: VERSION,
-            wood: 450,
-            skills,
+            prefs: r#"{"playlists":[],"playlist":0,"shuffle":false,"random_weapons":false}"#.into(),
+            missions,
         }
     }
 
@@ -144,29 +140,15 @@ mod tests {
     }
 
     #[test]
-    fn a_version_one_save_moves_its_level_into_woodcutting() {
-        let old = r#"{"version":1,"wood":20,"level":7}"#;
-        let mut skills = BTreeMap::new();
-        skills.insert("woodcutting".to_string(), 7);
-        assert_eq!(
-            load(old),
-            Loaded::Ready(Save {
-                version: VERSION,
-                wood: 20,
-                skills
-            })
-        );
-    }
-
-    #[test]
     fn a_save_this_build_cannot_use_is_refused_and_kept_word_for_word() {
         for (text, why) in [
             ("{nope", UNREADABLE),
             ("[1,2]", UNREADABLE),
-            (r#"{"wood":3}"#, UNREADABLE),
-            (r#"{"version":99,"wood":3}"#, NEWER),
-            (r#"{"version":0,"wood":3}"#, NO_STEP),
-            (r#"{"version":2,"wood":3,"skills":{},"cheat":true}"#, UNREADABLE),
+            (r#"{"prefs":""}"#, UNREADABLE),
+            (r#"{"version":99}"#, NEWER),
+            (r#"{"version":0}"#, NO_STEP),
+            (r#"{"version":1,"prefs":"","missions":{},"cheat":true}"#, UNREADABLE),
+            (r#"{"version":1,"missions":{"first_light":{"medal":3,"score":1,"extra":1}}}"#, UNREADABLE),
         ] {
             assert_eq!(
                 load(text),

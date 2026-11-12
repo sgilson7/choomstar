@@ -232,9 +232,85 @@ async function main() {
     return node;
   }
 
+  // Choomstar: the star chart, drawn where the core places each part
+  // (crates/core/src/chart.rs): tier rings, a spoke label per kind, one
+  // route into each mission, and a node per mission with its medal's rings
+  // and letter. A node is a button: it picks the mission.
+  const SVG = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs, text) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function chart(c) {
+    const box = make("section", undefined, "panel chart");
+    box.id = "chart";
+    const half = c.middle;
+    const drawing = svg("svg", { viewBox: `0 0 ${c.side} ${c.side}`, role: "group" });
+    drawing.setAttribute("aria-label", c.heading);
+    for (const r of c.rings) {
+      drawing.append(svg("circle", { cx: half, cy: half, r: r.r, class: "ring" }));
+      drawing.append(svg("text", { x: half, y: half - r.r, class: "ring-label" }, r.label));
+    }
+    for (const s of c.spokes) {
+      drawing.append(svg("line", { x1: half, y1: half, x2: s.x, y2: s.y, class: "spoke" }));
+      drawing.append(svg("text", { x: s.x, y: s.y, class: "spoke-label", "data-kind": s.kind }, s.label));
+    }
+    for (const r of c.routes) {
+      drawing.append(svg("line", { x1: r.from[0], y1: r.from[1], x2: r.to[0], y2: r.to[1], class: r.lit ? "route lit" : "route" }));
+    }
+    for (const n of c.nodes) {
+      const g = svg("g", { class: "node", tabindex: "-1", "data-kind": n.kind, "data-medal": n.medal, "data-open": n.open, "data-picked": n.picked, "data-secret": n.secret });
+      g.append(svg("title", {}, n.name));
+      for (let k = n.medal; k > 0; k -= 1) {
+        g.append(svg("circle", { cx: n.x, cy: n.y, r: c.node_r + c.ring_gap * k, class: "medal-ring" }));
+      }
+      g.append(svg("circle", { cx: n.x, cy: n.y, r: c.node_r, class: "dot" }));
+      g.append(svg("text", { x: n.x, y: n.y, class: "node-label" }, n.mark || n.label));
+      g.addEventListener("click", () => act("mission.pick", String(n.k)));
+      drawing.append(g);
+    }
+    box.append(drawing);
+    return box;
+  }
+
+  // Choomstar: the mission list, one button per mission: its number, name,
+  // kind and medal letter; the picked one pressed
+  function entries(list) {
+    const ol = make("ol", undefined, "entries");
+    for (const e of list) {
+      const li = make("li");
+      const b = make("button", undefined, "entry");
+      b.dataset.action = e.action.name;
+      b.dataset.value = e.action.value;
+      b.dataset.kind = e.kind;
+      b.dataset.medal = e.medal;
+      b.dataset.open = e.open;
+      b.dataset.picked = e.picked;
+      b.setAttribute("aria-pressed", e.picked);
+      b.append(make("span", e.number, "number"), make("span", e.name, "name"), make("span", e.kind_label, "kind"), make("span", e.mark, "mark"));
+      b.addEventListener("click", () => act(e.action.name, e.action.value, true));
+      li.append(b);
+      ol.append(li);
+    }
+    return ol;
+  }
+
   function panel(p) {
     const box = make("section", undefined, "panel");
     box.id = p.id;
+    if (p.entries) {
+      if (p.heading) box.append(make("h2", p.heading));
+      box.append(entries(p.entries));
+      (p.actions || []).forEach((a) => box.append(button(a)));
+      return box;
+    }
+    if (p.medal) {
+      const badge = make("div", p.medal.mark, "medal");
+      badge.dataset.medal = p.medal.level;
+      box.append(badge);
+    }
     // T25: a lobby with seat cards: the room across the top, the cards,
     // and the match's buttons along the foot
     const lobby = p.cards && p.cards.length > 0;
@@ -303,11 +379,19 @@ async function main() {
     // (what a reader has typed or pasted into a box stays through a redraw)
     // T11: the panels are rebuilt only when they change, so a view that
     // changes every tick leaves its buttons under the pointer
-    const panels = JSON.stringify(u.panels);
+    const panels = JSON.stringify(u.panels) + JSON.stringify(u.chart || null);
     if (panels !== shownPanels) {
       shownPanels = panels;
       const typed = new Map([...el("overlay").querySelectorAll("input, textarea")].filter((n) => !n.readOnly).map((n) => [n.id, n.value]));
-      el("overlay").replaceChildren(...u.panels.map(panel));
+      // the mission list keeps its place when the picked mission changes
+      const list = el("overlay").querySelector(".entries");
+      const scrolled = list ? list.scrollTop : null;
+      el("overlay").replaceChildren(...(u.chart ? [chart(u.chart)] : []), ...u.panels.map(panel));
+      const listNow = el("overlay").querySelector(".entries");
+      if (listNow && scrolled !== null) listNow.scrollTop = scrolled;
+      const picked = el("overlay").querySelector(".entry[data-picked=true]");
+      if (picked && !changed) picked.focus({ preventScroll: true });
+      if (picked && scrolled === null) picked.scrollIntoView({ block: "center" });
       typed.forEach((value, id) => {
         if (el(id) && !el(id).readOnly) el(id).value = value;
       });

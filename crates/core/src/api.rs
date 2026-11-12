@@ -141,6 +141,12 @@ pub struct Panel {
     /// T25: the online lobby's seats
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cards: Vec<Card>,
+    /// Choomstar: the mission list's entries
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<crate::chart::Entry>,
+    /// Choomstar: a medal shown large (results)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medal: Option<crate::chart::MedalMark>,
 }
 
 /// A line over the play view: its id, its text, and whether it shows.
@@ -190,12 +196,15 @@ pub struct Ui {
     pub no_webgl: String,
     /// M4
     pub online: OnlineView,
-    /// T32: what the page keeps for the next visit and hands back with
-    /// `prefs.load`; the page reads nothing in it
+    /// the save's text (kits/saves): the page keeps it and hands it back
+    /// with `save.load`; the page reads nothing in it
     pub saved: String,
+    /// Choomstar: the star chart, on the missions screen
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chart: Option<crate::chart::Chart>,
 }
 
-fn action(g: &Game, name: &str, value: &str, label_key: &str, engage: bool) -> Action {
+pub(crate) fn action(g: &Game, name: &str, value: &str, label_key: &str, engage: bool) -> Action {
     Action {
         name: name.into(),
         value: value.into(),
@@ -574,7 +583,7 @@ fn cards(g: &Game, v: &crate::versus::Versus) -> Vec<Card> {
         .collect()
 }
 
-fn panel(id: &str) -> Panel {
+pub(crate) fn panel(id: &str) -> Panel {
     Panel {
         id: id.into(),
         heading: String::new(),
@@ -585,6 +594,8 @@ fn panel(id: &str) -> Panel {
         rows: Vec::new(),
         fields: Vec::new(),
         cards: Vec::new(),
+        entries: Vec::new(),
+        medal: None,
     }
 }
 
@@ -932,6 +943,7 @@ pub fn hud(g: &Game) -> Vec<Hud> {
     ]
     .into_iter()
     .chain(round_lines(g, playing))
+    .chain(crate::chart::hud(g, playing))
     .collect()
 }
 
@@ -949,12 +961,12 @@ pub fn ui(g: &Game) -> Ui {
             let mut p = panel("menu");
             p.heading = g.strings.get("title");
             p.text = g.strings.get("menu_text");
+            // Choomstar: missions first; single player, so no online play
             p.actions = vec![
+                action(g, "menu.missions", "", "missions", false),
                 action(g, "menu.practice", "", "practice", true),
                 action(g, "menu.duel", "", "duel", true),
                 action(g, "menu.bots", "", "bots_match", true),
-                action(g, "online.host", "", "host_match", false),
-                action(g, "online.join", "", "join_match", false),
                 action(g, "screen.playlists", "", "playlists", false),
                 action(g, "screen.settings", "", "settings", false),
             ];
@@ -973,12 +985,16 @@ pub fn ui(g: &Game) -> Ui {
                     action(g, "screen.menu", "", "leave", false),
                 ]
             } else {
-                vec![
+                let mut a = vec![
                     action(g, "play.resume", "", "resume", true),
                     action(g, "play.restart", "", "restart", true),
                     action(g, "screen.settings", "", "settings", false),
-                    action(g, "screen.menu", "", "to_menu", false),
-                ]
+                ];
+                if g.mission.is_some() {
+                    a.push(action(g, "results.chart", "", "to_chart", false));
+                }
+                a.push(action(g, "screen.menu", "", "to_menu", false));
+                a
             };
             p.rows_heading = g.strings.get("controls");
             p.rows = controls(g);
@@ -995,6 +1011,8 @@ pub fn ui(g: &Game) -> Ui {
             panels.push(p);
         }
         Screen::Playlists => panels.extend(playlist_panels(g)),
+        Screen::Missions => panels.extend(crate::chart::mission_panels(g)),
+        Screen::Results => panels.extend(crate::chart::results_panels(g)),
         Screen::Online => {
             panels.push(online_panel(g));
             // CS-Q22: A, and after an online match
@@ -1022,6 +1040,7 @@ pub fn ui(g: &Game) -> Ui {
             .collect(),
         no_webgl: g.strings.get("no_webgl"),
         saved: g.saved(),
+        chart: (g.screen == Screen::Missions).then(|| crate::chart::chart(g)),
         online: OnlineView {
             cmds: g.cmds.clone(),
             status: g.versus.as_ref().map(|v| v.status()).unwrap_or("").into(),

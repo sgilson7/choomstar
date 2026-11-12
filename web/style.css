@@ -3,29 +3,36 @@
    messages. The journal's roster palette: primed canvas, ivory black,
    vermilion and ochre, after the tenebrists. */
 :root {
-  --ink: #efe3c8;
-  --ink-soft: #bfae8f;
-  --umber: #2a1e15;
-  --umber-edge: #4a3527;
-  --glass: rgba(23, 17, 12, 0.9);
-  --accent: #b3361f;
-  --accent-deep: #6e1d18;
-  --ochre: #c79a3a;
-  --hit: #f2e6cf;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* Choomstar: chrome and space age, after Phantom Blade Zero's menus:
+     ink-black, brushed steel, one hot accent, thin rules */
+  --ink: #e8edf3;
+  --ink-soft: #9aa5b2;
+  --dim: #4b5560;
+  --umber: #0e1217;
+  --umber-edge: #262d36;
+  --glass: rgba(7, 9, 12, 0.92);
+  --accent: #e0412b;
+  --accent-deep: #7a1f14;
+  --ochre: #d9ad4f;
+  --cyan: #7fd3ff;
+  --bronze: #c07a43;
+  --silver: #cdd5de;
+  --gold: #e6bb4c;
+  --hit: #f2f6fa;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 * { box-sizing: border-box; }
 /* A display rule elsewhere must not show what the page hid. */
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body {
-  background: #17110c;
+  background: #07090c;
   color: var(--ink);
-  font: 16px/1.45 Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font: 16px/1.45 "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
-#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #17110c; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #07090c; }
 body[data-ready="false"] #view { visibility: hidden; }
 #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; letter-spacing: 0.08em; color: var(--ink-soft); }
 
@@ -37,14 +44,14 @@ body[data-ready="false"] #view { visibility: hidden; }
 body[data-screen="play"] #crosshair { display: block; }
 
 #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.6) 100%); }
-body[data-screen="title"] #overlay, body[data-screen="menu"] #overlay { align-items: flex-end; justify-content: flex-start; padding: 0 0 8vh 6vw; background: linear-gradient(90deg, rgba(10, 6, 3, 0.75) 0%, rgba(0, 0, 0, 0) 62%); }
+body[data-screen="title"] #overlay, body[data-screen="menu"] #overlay { align-items: flex-end; justify-content: flex-start; padding: 0 0 8vh 6vw; background: linear-gradient(90deg, rgba(4, 6, 9, 0.82) 0%, rgba(0, 0, 0, 0) 62%); }
 .panel { min-width: 320px; max-width: 460px; max-height: calc(100vh - 32px); overflow: auto; padding: 28px 32px 24px; border-radius: 6px; background: var(--glass); border: 1px solid var(--umber-edge); box-shadow: var(--shadow); }
 #title, #menu { background: none; border: none; box-shadow: none; max-width: 640px; }
 .panel h1 { margin: 0 0 14px; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: 0.05em; }
-#title h1, #menu h1 { font-size: 64px; letter-spacing: 0.04em; font-style: italic; text-shadow: 0 3px 18px rgba(0, 0, 0, 0.7); }
+#title h1, #menu h1 { font-size: 72px; letter-spacing: 0.18em; font-weight: 600; text-transform: uppercase; background: linear-gradient(180deg, #ffffff 0%, #c9d2dc 45%, #6c7784 52%, #e8edf3 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.8)); }
 .panel h2 { margin: 20px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft); }
 .panel p { margin: 0 0 16px; color: var(--ink-soft); font-size: 17px; }
-.panel button { display: block; width: 100%; padding: 13px 22px; border: 1px solid var(--accent-deep); border-radius: 4px; background: var(--accent); color: #f6efe2; font: inherit; font-size: 18px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; box-shadow: 0 3px 0 var(--accent-deep); }
+.panel button { display: block; width: 100%; padding: 13px 22px; border: 1px solid var(--accent-deep); border-radius: 4px; background: linear-gradient(180deg, #2a3038 0%, #151a20 100%); color: var(--ink); font: inherit; font-size: 18px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12); border-color: var(--umber-edge); border-left: 3px solid var(--accent); }
 #title button, #menu button { max-width: 320px; }
 .panel button + button { margin-top: 10px; }
 .panel button:hover:not(:disabled) { filter: brightness(1.1); }
@@ -208,4 +215,75 @@ body[data-screen="playlists"] #overlay { gap: 24px; align-items: stretch; paddin
 @media (max-width: 760px) {
   #playlist .setting { flex-wrap: wrap; }
   #playlist .setting output { flex: 1 1 60%; }
+}
+
+/* Choomstar: the missions screen: the star chart, the list, the briefing */
+body[data-screen="missions"] #overlay { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.8fr) minmax(280px, 0.9fr); gap: 18px; align-items: stretch; padding: 3vh 2.5vw; background: radial-gradient(ellipse at 30% 50%, rgba(18, 26, 38, 0.92) 0%, rgba(4, 6, 9, 0.97) 70%); }
+body[data-screen="missions"] .panel { max-width: none; min-width: 0; max-height: calc(100vh - 6vh); }
+.chart { display: flex; align-items: center; justify-content: center; padding: 8px; background: rgba(7, 9, 12, 0.6); }
+.chart svg { width: 100%; height: 100%; max-height: calc(100vh - 8vh); overflow: visible; font-family: inherit; }
+.chart .ring { fill: none; stroke: var(--umber-edge); stroke-width: 1.5; }
+.chart .ring-label { fill: var(--dim); font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #07090c; stroke-width: 6px; }
+.chart .spoke { stroke: #161b22; stroke-width: 1; }
+.chart .spoke-label { fill: var(--ink-soft); font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase; text-anchor: middle; dominant-baseline: middle; }
+.chart .route { stroke: #222a33; stroke-width: 2; }
+.chart .route.lit { stroke: var(--cyan); stroke-opacity: 0.55; }
+.chart .node { cursor: pointer; }
+.chart .dot { fill: #10151b; stroke: var(--dim); stroke-width: 2; }
+.chart .node[data-open="true"] .dot { fill: #1b222b; stroke: var(--ink); }
+.chart .node[data-picked="true"] .dot { stroke: var(--accent); stroke-width: 4; }
+.chart .node:hover .dot { stroke: var(--cyan); }
+.chart .node-label { fill: var(--ink-soft); font-size: 15px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.chart .node[data-open="false"] .node-label { fill: var(--dim); }
+.chart .medal-ring { fill: none; stroke-width: 2.5; }
+.chart .node[data-medal="1"] .medal-ring, .chart .node[data-medal="1"] .node-label { stroke: var(--bronze); fill: none; }
+.chart .node[data-medal="2"] .medal-ring { stroke: var(--silver); }
+.chart .node[data-medal="3"] .medal-ring { stroke: var(--gold); }
+.chart .node[data-medal="1"] .node-label { fill: var(--bronze); stroke: none; }
+.chart .node[data-medal="2"] .node-label { fill: var(--silver); }
+.chart .node[data-medal="3"] .node-label { fill: var(--gold); }
+.chart .node[data-secret="true"] .dot { stroke-dasharray: 4 4; }
+#mission-list { display: flex; flex-direction: column; padding: 18px 14px 14px; }
+#mission-list h2 { margin-top: 0; }
+.entries { list-style: none; margin: 0 0 12px; padding: 0; overflow-y: auto; flex: 1; scrollbar-color: var(--dim) transparent; }
+.entries li + li { margin-top: 3px; }
+.panel button.entry { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto 18px; gap: 8px; align-items: baseline; padding: 7px 10px; font-size: 15px; letter-spacing: 0.04em; text-transform: none; text-align: left; border: 1px solid transparent; border-left: 3px solid transparent; background: rgba(255, 255, 255, 0.02); box-shadow: none; }
+.panel button.entry + button { margin-top: 0; }
+.entry .number { color: var(--dim); font-variant-numeric: tabular-nums; }
+.entry .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry .kind { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+.entry .mark { font-weight: 700; text-align: center; }
+.entry[data-open="false"] { color: var(--dim); }
+.entry[data-open="false"] .kind { color: var(--dim); }
+.entry[data-picked="true"] { border-color: var(--umber-edge); border-left-color: var(--accent); background: rgba(224, 65, 43, 0.1); }
+.entry[data-medal="1"] .mark { color: var(--bronze); }
+.entry[data-medal="2"] .mark { color: var(--silver); }
+.entry[data-medal="3"] .mark { color: var(--gold); }
+#briefing h1 { font-size: 34px; letter-spacing: 0.06em; text-transform: uppercase; }
+#briefing table.controls td:first-child { width: 30%; color: var(--ink-soft); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
+#briefing table.controls td { font-size: 15px; padding: 5px 0; border-bottom: 1px solid #161b22; }
+#briefing button:disabled { opacity: 0.4; cursor: default; }
+#save-note { grid-column: 1 / -1; }
+/* the results: the medal large, as a letter in its rings */
+body[data-screen="results"] #overlay { background: radial-gradient(ellipse at center, rgba(10, 14, 20, 0.7) 0%, rgba(4, 6, 9, 0.95) 80%); }
+#results { text-align: center; min-width: 380px; }
+#results h1 { font-size: 40px; letter-spacing: 0.2em; text-transform: uppercase; }
+#results table.controls td { text-align: left; }
+.medal { width: 120px; height: 120px; margin: 4px auto 18px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 54px; font-weight: 700; color: var(--dim); border: 3px solid var(--umber-edge); }
+.medal[data-medal="1"] { color: var(--bronze); border-color: var(--bronze); box-shadow: 0 0 0 6px #07090c, 0 0 0 9px var(--bronze); }
+.medal[data-medal="2"] { color: var(--silver); border-color: var(--silver); box-shadow: 0 0 0 6px #07090c, 0 0 0 9px var(--silver), 0 0 0 15px #07090c, 0 0 0 18px var(--silver); }
+.medal[data-medal="3"] { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 0 6px #07090c, 0 0 0 9px var(--gold), 0 0 0 15px #07090c, 0 0 0 18px var(--gold), 0 0 0 24px #07090c, 0 0 0 27px var(--gold), 0 0 40px rgba(230, 187, 76, 0.35); }
+/* the mission's lines over play: its name and clock top left, the goal
+   under them, the next medal top right, a boss's bar across the top */
+#hud-m-name { left: 24px; top: 18px; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-soft); transition: none; }
+#hud-m-clock { left: 24px; top: 52px; font: 700 26px/1.2 ui-monospace, Menlo, Consolas, monospace; transition: none; }
+#hud-m-goal { left: 24px; top: 100px; font-size: 18px; transition: none; border-left: 3px solid var(--accent); }
+#hud-m-stage { left: 24px; top: 142px; font-size: 14px; color: var(--ink-soft); transition: none; }
+#hud-m-carry { left: 24px; top: 142px; font-size: 15px; color: var(--ochre); transition: none; }
+#hud-m-medal { right: 24px; top: 58px; font-size: 14px; letter-spacing: 0.08em; color: var(--gold); transition: none; }
+#hud-m-restart { left: 50%; bottom: 14vh; transform: translateX(-50%); font-size: 14px; color: var(--ink-soft); transition: opacity 1.2s ease; }
+#hud-m-boss { left: 50%; top: 18px; transform: translateX(-50%); width: min(560px, 60vw); text-align: center; font-size: 14px; letter-spacing: 0.18em; text-transform: uppercase; border: 1px solid var(--umber-edge); transition: none; background: linear-gradient(to right, rgba(224, 65, 43, 0.85) 0 var(--fill, 100%), rgba(0, 0, 0, 0.6) var(--fill, 100%)); }
+@media (max-width: 1000px) {
+  body[data-screen="missions"] #overlay { grid-template-columns: 1fr; overflow: auto; }
+  .chart { display: none; }
 }
