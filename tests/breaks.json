@@ -2693,5 +2693,12 @@
   "find": "        if self.over > 0 {\n            self.over -= 1;",
   "replace": "        if self.over > 0 {\n            self.over = 1;",
   "test": "a_round_won_is_said_for_four_seconds_then_the_next_round_counts_in"
+ },
+ {
+  "name": "CM after a gold the chart comes first",
+  "file": "crates/core/src/chart.rs",
+  "find": "    p.actions = if o.medal == GOLD {",
+  "replace": "    p.actions = if o.medal == 99 {",
+  "test": "after_a_gold_the_first_button_is_the_chart_and_otherwise_try_again"
  }
 ]

@@ -435,11 +435,21 @@ pub fn results_panels(g: &Game) -> Vec<Panel> {
             does: s.get("new_best"),
         });
     }
-    p.actions = vec![
-        action(g, "mission.retry", "", "retry", true),
-        action(g, "mission.next", "", "next_mission", false),
-        action(g, "results.chart", "", "to_chart", false),
-    ];
+    // the first button is the one focused: after a gold there is nothing
+    // more to earn, so it is the chart; otherwise trying again
+    p.actions = if o.medal == GOLD {
+        vec![
+            action(g, "results.chart", "", "to_chart", false),
+            action(g, "mission.next", "", "next_mission", false),
+            action(g, "mission.retry", "", "retry", true),
+        ]
+    } else {
+        vec![
+            action(g, "mission.retry", "", "retry", true),
+            action(g, "mission.next", "", "next_mission", false),
+            action(g, "results.chart", "", "to_chart", false),
+        ]
+    };
     vec![p]
 }
 
@@ -596,6 +606,21 @@ mod tests {
         assert_eq!(c.routes.len(), 45);
         assert!(c.nodes[49].secret, "the finale is hidden until opened");
         assert_eq!(c.nodes[49].name, g.strings.get("secret_name"));
+    }
+
+    #[test]
+    fn after_a_gold_the_first_button_is_the_chart_and_otherwise_try_again() {
+        let mut g = crate::game::tests::game();
+        let o = |medal| crate::mission::Outcome {
+            cleared: true,
+            score: 600,
+            medal,
+            why: "mission.cleared",
+        };
+        g.ended = Some((o(GOLD), crate::mission::Best::default()));
+        assert_eq!(results_panels(&g)[0].actions[0].name, "results.chart");
+        g.ended = Some((o(SILVER), crate::mission::Best::default()));
+        assert_eq!(results_panels(&g)[0].actions[0].name, "mission.retry");
     }
 
     #[test]
