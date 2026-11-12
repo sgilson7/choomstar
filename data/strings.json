@@ -316,5 +316,6 @@
   "mark_letter_3": "G",
   "medals_earned": "{n} of {of} medals",
   "results_text": "{name}: {why}",
-  "diver_alt": "The diver in a copper helmet and grey suit"
+  "diver_alt": "The diver in a copper helmet and grey suit",
+  "hud_stage_cleared": "Fight {n} of {of} cleared"
 }

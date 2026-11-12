@@ -110,8 +110,12 @@ const SEATS_MOST: usize = 24;
 /// A moving target swings this far each way (m) over this many ticks.
 const SWAY: i32 = 3;
 const SWAY_TICKS: i32 = 240;
-/// Ticks between a cleared wave or stage and the next.
+/// Ticks between a cleared wave and the next.
 const BREATHER: i32 = 120;
+/// Chumontillado's round count before play (3 s) and a round's end shown
+/// before the next (4 s), for a mission's start, its rounds and stages.
+pub const COUNT_TICKS: i32 = crate::rounds::COUNT_TICKS;
+pub const OVER_TICKS: i32 = crate::rounds::OVER_TICKS;
 /// A foe's hit body is kept this full; what it lost is the foe's damage.
 const PART_FULL: i32 = 100_000;
 /// The Black Knight as a boss: its health, and where it takes up the trabuco.
@@ -383,6 +387,24 @@ pub struct Outcome {
     pub why: &'static str,
 }
 
+/// What the end of a round or stage says while the next one waits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Banner {
+    /// you took round `n`
+    RoundWon(i32),
+    /// the seat wearing this skin took it, or nobody did (your own fall)
+    RoundLost(Option<u8>),
+    /// fight `n` of a gauntlet is cleared
+    StageCleared(i32),
+}
+
+/// What follows a round's end once it has been shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    Round,
+    Part,
+}
+
 /// What a seat is, to the mission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -448,6 +470,12 @@ pub struct Run {
     pub repairs: i32,
     pub repair: Option<V3>,
     pub boss: Option<usize>,
+    /// ticks left of the count before play, and of a round's end shown,
+    /// with what it says and what comes after
+    pub count: i32,
+    pub over: i32,
+    pub banner: Option<Banner>,
+    next: Next,
     alive_was: Vec<bool>,
     rng: Rng,
 }
@@ -469,6 +497,7 @@ impl Run {
             hunt: true,
             stay_down: !team,
             no_reset: true,
+            frozen: true,
         };
         let me = &mut w.players[0];
         me.skin = my_skin;
@@ -563,10 +592,16 @@ impl Run {
             repairs: spec.goal.repairs,
             repair: None,
             boss: None,
+            count: COUNT_TICKS,
+            over: 0,
+            banner: None,
+            next: Next::Round,
             alive_was: vec![true],
             rng: Rng::new(0x4348_4f4f_u64 ^ (k as u64).wrapping_mul(0x9e37_79b9)),
         };
         run.begin_part(&mut w);
+        // the count before play: nobody moves until it ends
+        w.rules.frozen = true;
         (run, w)
     }
 
@@ -941,8 +976,11 @@ impl Run {
             self.end(true, s, "mission.cleared");
             return;
         }
-        // a gauntlet's next stage, after a breather and a repair cell
-        self.part += 1;
+        // a gauntlet's stage cleared: said, then the next after a count
+        self.banner = Some(Banner::StageCleared(self.part as i32 + 1));
+        self.over = OVER_TICKS;
+        self.next = Next::Part;
+        w.rules.frozen = true;
         for k in 1..w.players.len() {
             w.players[k].dead = crate::world::DOWN_FOR_ROUND;
             w.players[k].health = 0;
@@ -955,13 +993,53 @@ impl Run {
             let me = w.players[0].body.origin;
             self.repair = Some(self.somewhere(me, 3, 6));
         }
-        self.begin_part(w);
-        self.breather = BREATHER;
+    }
+
+    /// A round's end shown, the next round or stage set up, and the count
+    /// before it; or the count ticking down. Whether play waits this tick.
+    fn waiting(&mut self, w: &mut World) -> bool {
+        use crate::sound::{Heard, Voice};
+        let say = |w: &mut World, voice| {
+            w.heard.push(Heard {
+                voice,
+                at: V3::ZERO,
+                by: 0,
+            })
+        };
+        if self.over > 0 {
+            self.over -= 1;
+            if self.over == 0 {
+                self.banner = None;
+                match self.next {
+                    Next::Round => self.start_round(w),
+                    Next::Part => {
+                        self.part += 1;
+                        self.begin_part(w);
+                    }
+                }
+                self.count = COUNT_TICKS;
+            }
+            return true;
+        }
+        if self.count > 0 {
+            self.count -= 1;
+            if self.count == 0 {
+                w.rules.frozen = false;
+                say(w, Voice::Go);
+            } else if self.count % SECOND == 0 || self.count == COUNT_TICKS - 1 {
+                say(w, Voice::Count);
+            }
+            return true;
+        }
+        false
     }
 
     /// One tick, after the world's. `bits` are your held keys this tick.
     pub fn step(&mut self, w: &mut World, bits: u32) {
         if self.outcome.is_some() {
+            return;
+        }
+        if self.waiting(w) {
             return;
         }
         if !self.started && bits & !crate::input::RESET != 0 {
@@ -1185,7 +1263,17 @@ impl Run {
                         self.end(false, 0, "mission.out_of_rounds");
                         return;
                     }
-                    self.start_round(w);
+                    // who felled you takes the round; it is said, then the
+                    // next round after its count
+                    let by = felled
+                        .iter()
+                        .find(|&&(by, k)| k == 0 && by != 0 && by < seats)
+                        .map(|&(by, _)| w.players[by].skin);
+                    self.banner = Some(Banner::RoundLost(by));
+                    self.over = OVER_TICKS;
+                    self.next = Next::Round;
+                    self.orbs.clear();
+                    w.rules.frozen = true;
                 } else if !foes_up {
                     self.won += 1;
                     if spec.goal.ladder > 0 {
@@ -1199,8 +1287,10 @@ impl Run {
                     if self.done >= self.need {
                         self.part_done(w);
                     } else {
-                        self.breather = BREATHER;
-                        self.start_round(w);
+                        self.banner = Some(Banner::RoundWon(self.won + self.lost));
+                        self.over = OVER_TICKS;
+                        self.next = Next::Round;
+                        w.rules.frozen = true;
                     }
                 }
             }
@@ -1609,8 +1699,16 @@ mod tests {
         assert_eq!(route_from(index("bell_tower").unwrap()), Some(0));
     }
 
+    /// A mission past its count, ready to play.
+    fn begin(k: usize, skin: u8, lifelike: bool) -> (Run, World) {
+        let (mut run, mut w) = Run::start(k, skin, lifelike);
+        run.count = 0;
+        w.rules.frozen = false;
+        (run, w)
+    }
+
     fn play(k: usize, ticks: i32) -> (Run, World) {
-        let (mut run, mut w) = Run::start(k, 0, false);
+        let (mut run, mut w) = begin(k, 0, false);
         for _ in 0..ticks {
             w.step(&[crate::input::Input::default()]);
             run.step(&mut w, 0);
@@ -1623,7 +1721,7 @@ mod tests {
 
     #[test]
     fn a_targets_mission_places_its_targets_on_the_floor_and_breaking_them_all_clears_it() {
-        let (mut run, mut w) = Run::start(0, 0, false);
+        let (mut run, mut w) = begin(0, 0, false);
         assert_eq!(w.dummies.len(), 10);
         assert_eq!(run.need, 10);
         for d in &w.dummies {
@@ -1640,7 +1738,7 @@ mod tests {
     fn the_clock_starts_on_the_first_move_and_the_time_allowed_ends_it() {
         let (run, _) = play(0, 200);
         assert_eq!(run.ticks, 0, "nobody moved");
-        let (mut run, mut w) = Run::start(0, 0, false);
+        let (mut run, mut w) = begin(0, 0, false);
         for _ in 0..(90 * SECOND + 1) {
             run.step(&mut w, crate::input::FORWARD);
         }
@@ -1649,7 +1747,7 @@ mod tests {
 
     #[test]
     fn a_course_counts_its_gates_in_order() {
-        let (mut run, mut w) = Run::start(index("plaza_run").unwrap(), 0, false);
+        let (mut run, mut w) = begin(index("plaza_run").unwrap(), 0, false);
         assert_eq!(run.gates.len(), 6);
         let second = run.gates[1];
         w.players[0].body.origin = second;
@@ -1669,7 +1767,7 @@ mod tests {
 
     #[test]
     fn the_toboggan_course_runs_from_the_platform_down_the_slide_to_the_arena() {
-        let (run, w) = Run::start(index("toboggan").unwrap(), 0, false);
+        let (run, w) = begin(index("toboggan").unwrap(), 0, false);
         assert_eq!(run.gates.len(), 8);
         let g = &run.gates;
         // the platform stands 90 m up at z 240 to 252; the arena floor is
@@ -1679,6 +1777,52 @@ mod tests {
         let on_slide = g.iter().filter(|p| p.z > fx::int(20) && p.y > fx::int(2)).count();
         assert!(on_slide >= 4, "{on_slide} gates on the slide");
         assert!(w.pickups.is_empty(), "a course carries no pickups");
+    }
+
+    #[test]
+    fn a_mission_opens_on_a_three_second_count_and_nobody_moves_in_it() {
+        let (mut run, mut w) = Run::start(index("sparring").unwrap(), 0, false);
+        assert!(w.rules.frozen);
+        let bot = (1..w.players.len()).find(|&k| run.roles[k] == Role::Bot).unwrap();
+        let at = w.players[bot].body.origin;
+        for _ in 0..(COUNT_TICKS - 1) {
+            w.step(&[crate::input::Input::default()]);
+            run.step(&mut w, crate::input::FORWARD);
+        }
+        assert_eq!(w.players[bot].body.origin.len_xz(), at.len_xz(), "the bot waits");
+        assert_eq!(run.ticks, 0, "the clock waits");
+        run.step(&mut w, crate::input::FORWARD);
+        assert!(!w.rules.frozen);
+        assert_eq!(run.count, 0);
+    }
+
+    #[test]
+    fn a_round_won_is_said_for_four_seconds_then_the_next_round_counts_in() {
+        let (mut run, mut w) = begin(index("sparring").unwrap(), 0, false);
+        let bot = (1..w.players.len()).find(|&k| run.roles[k] == Role::Bot).unwrap();
+        let h = w.players[bot].health;
+        w.hit(0, bot, h);
+        run.step(&mut w, crate::input::FORWARD);
+        assert_eq!(run.banner, Some(Banner::RoundWon(1)));
+        assert!(w.rules.frozen);
+        for _ in 0..(OVER_TICKS - 1) {
+            run.step(&mut w, crate::input::FORWARD);
+        }
+        assert!(!w.players[bot].alive(), "no new round while it is said");
+        run.step(&mut w, crate::input::FORWARD);
+        assert_eq!(run.banner, None);
+        assert_eq!(run.count, COUNT_TICKS);
+        assert!((1..w.players.len()).any(|k| run.roles[k] == Role::Bot && w.players[k].alive()));
+    }
+
+    #[test]
+    fn a_round_lost_names_the_bot_that_took_it() {
+        let (mut run, mut w) = begin(index("sparring").unwrap(), 0, false);
+        let bot = (1..w.players.len()).find(|&k| run.roles[k] == Role::Bot).unwrap();
+        w.hit(bot, 0, HEALTH);
+        run.step(&mut w, crate::input::FORWARD);
+        assert_eq!(run.banner, Some(Banner::RoundLost(Some(skin("hidalgo")))));
+        assert_eq!(run.lost, 1);
     }
 
     #[test]
@@ -1698,7 +1842,7 @@ mod tests {
 
     #[test]
     fn felled_in_a_horde_ends_it_and_no_medal_is_given() {
-        let (mut run, mut w) = Run::start(index("doors_open").unwrap(), 0, false);
+        let (mut run, mut w) = begin(index("doors_open").unwrap(), 0, false);
         w.strike(0, HEALTH, V3::ZERO);
         run.step(&mut w, 0);
         let o = run.outcome.unwrap();
@@ -1728,7 +1872,7 @@ mod tests {
 
     #[test]
     fn salvage_counts_relics_brought_to_the_lift() {
-        let (mut run, mut w) = Run::start(index("salvage_puerto").unwrap(), 0, false);
+        let (mut run, mut w) = begin(index("salvage_puerto").unwrap(), 0, false);
         assert_eq!(run.relics.len(), 8);
         for (p, _) in run.relics.clone().iter().take(5) {
             w.players[0].body.origin = *p;
@@ -1750,7 +1894,7 @@ mod tests {
 
     #[test]
     fn a_team_match_counts_the_sides_and_allies_do_not_hurt_you() {
-        let (run, w) = Run::start(index("two_by_two").unwrap(), 0, false);
+        let (run, w) = begin(index("two_by_two").unwrap(), 0, false);
         assert_eq!(run.need, 10);
         let ally = (1..w.players.len())
             .find(|&k| run.roles[k] == Role::Ally)
@@ -1763,7 +1907,7 @@ mod tests {
     /// straight to each gate and relic clears every mission inside its
     /// time, so no goal is out of reach of the rules.
     fn oracle(k: usize) -> Option<Outcome> {
-        let (mut run, mut w) = Run::start(k, 0, false);
+        let (mut run, mut w) = begin(k, 0, false);
         let most = run.spec().limit().max(600) * SECOND + SECOND;
         let go = crate::input::Input {
             keys: crate::input::FORWARD,

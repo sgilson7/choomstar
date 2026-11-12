@@ -2679,5 +2679,19 @@
   "find": "                let mut left: Vec<V3> = w.map.pickups.iter().map(|&(at, _)| at).collect();",
   "replace": "                let mut left: Vec<V3> = Vec::new();",
   "test": "the_toboggan_course_runs_from_the_platform_down_the_slide_to_the_arena"
+ },
+ {
+  "name": "CM the count holds everyone still",
+  "file": "crates/core/src/world.rs",
+  "find": "let r = if self.rounds.is_some_and(|x| x.frozen()) || self.rules.frozen {",
+  "replace": "let r = if self.rounds.is_some_and(|x| x.frozen()) {",
+  "test": "a_mission_opens_on_a_three_second_count_and_nobody_moves_in_it"
+ },
+ {
+  "name": "CM a round's end is shown before the next",
+  "file": "crates/core/src/mission.rs",
+  "find": "        if self.over > 0 {\n            self.over -= 1;",
+  "replace": "        if self.over > 0 {\n            self.over = 1;",
+  "test": "a_round_won_is_said_for_four_seconds_then_the_next_round_counts_in"
  }
 ]

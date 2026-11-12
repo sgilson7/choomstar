@@ -294,3 +294,7 @@ body[data-screen="results"] #overlay { background: radial-gradient(ellipse at ce
 #briefing img.picture { float: right; width: 34%; max-width: 170px; margin: -8px -10px 8px 12px; }
 #results img.picture { position: fixed; left: 5vw; bottom: 4vh; height: 76vh; width: auto; opacity: 0.92; }
 @media (max-width: 1000px) { #menu img.picture, #results img.picture { display: none; } }
+/* the count before play and a round's end, large in the middle, as
+   Chumontillado's round count is drawn */
+#hud-m-count { left: 50%; top: 30%; transform: translateX(-50%); font: 700 72px/1 ui-monospace, Menlo, Consolas, monospace; padding: 10px 30px; transition: none; }
+#hud-m-banner { left: 50%; top: 30%; transform: translateX(-50%); font-size: 30px; font-weight: 700; letter-spacing: 0.06em; padding: 12px 28px; border-bottom: 3px solid var(--accent); transition: none; }

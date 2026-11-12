@@ -420,6 +420,8 @@ pub struct Rules {
     /// the reset key does not stand you back at your spawn (the mission
     /// takes it to start again)
     pub no_reset: bool,
+    /// nobody moves or fires, as in a round's count; the mouse still looks
+    pub frozen: bool,
 }
 
 /// A straw target's height to its head (m).
@@ -815,7 +817,7 @@ impl World {
             nav: self.nav.as_deref().filter(|_| in_match),
             hunt,
             speed: me.speed(),
-            frozen: self.rounds.is_some_and(|r| r.frozen()),
+            frozen: self.rounds.is_some_and(|r| r.frozen()) || self.rules.frozen,
             reach: me.arms.weapon.swing().map(|s| s.reach),
             tick: self.tick,
             feet: me.body.origin,
@@ -887,7 +889,7 @@ impl World {
             };
             // M5: in a round's count, after it, and after the match, nobody
             // moves or fires; the mouse still looks
-            let r = if self.rounds.is_some_and(|x| x.frozen()) {
+            let r = if self.rounds.is_some_and(|x| x.frozen()) || self.rules.frozen {
                 Input {
                     keys: 0,
                     buttons: 0,

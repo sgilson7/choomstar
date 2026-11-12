@@ -297,7 +297,6 @@ impl Game {
                     Mouse::default()
                 };
                 self.world.step(&[Input::from_page(*b, m)]);
-                self.hear();
                 // Choomstar: the mission's rules after the world's tick; a
                 // press of the reset key starts it again (CM-Q18)
                 let reset = *b & crate::input::RESET != 0;
@@ -322,6 +321,8 @@ impl Game {
                         break;
                     }
                 }
+                // the tick's sounds, the mission's count and go among them
+                self.hear();
             }
             self.alpha = self.clock.alpha();
             self.follow_hud();

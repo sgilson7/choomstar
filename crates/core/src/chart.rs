@@ -458,6 +458,38 @@ pub fn hud(g: &Game, playing: bool) -> Vec<Hud> {
         ..Hud::default()
     };
     let mut out = vec![line("m-name", m.name.clone(), true)];
+    // the count before play, and a round's end said while the next waits
+    out.push(line(
+        "m-count",
+        ((run.count + 59) / 60).to_string(),
+        run.count > 0 && run.over == 0,
+    ));
+    let banner = match run.banner {
+        Some(mission::Banner::RoundWon(_)) => s.get("hud_round_you"),
+        Some(mission::Banner::RoundLost(Some(skin))) => s
+            .get("hud_round_won")
+            .replace("{who}", &crate::api::skin_name(g, skin)),
+        Some(mission::Banner::RoundLost(None)) => s.get("hud_round_none"),
+        Some(mission::Banner::StageCleared(n)) => s
+            .get("hud_stage_cleared")
+            .replace("{n}", &n.to_string())
+            .replace("{of}", &run.parts.len().to_string()),
+        None => String::new(),
+    };
+    let score = s
+        .get("hud_rounds")
+        .replace("{won}", &run.won.to_string())
+        .replace("{lost}", &run.lost.to_string());
+    let shown_banner = run.over > 0 && !banner.is_empty();
+    let banner = if matches!(
+        run.banner,
+        Some(mission::Banner::RoundWon(_)) | Some(mission::Banner::RoundLost(_))
+    ) {
+        format!("{banner} · {score}")
+    } else {
+        banner
+    };
+    out.push(line("m-banner", banner, shown_banner));
     let clock_text = if m.limit() > 0 {
         s.get("hud_clock_limit")
             .replace("{time}", &clock_ticks(run.ticks))
