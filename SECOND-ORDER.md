@@ -26,6 +26,7 @@ One row per assumption, surprise or open item. **Kind** is *divergence* (what wa
 | R2.8 | divergence | Combat "win 3 rounds" and the ladders | The draft said rounds and ladder without saying how | A round is won by felling every bot of it and lost by being felled; three lost ends it. A ladder is its bots one at a time, each a round | chart.rs goal_win_rounds, goal_ladder strings | done |
 | R2.9 | divergence | Medals and restarts on R (CM-Q18) | Chumontillado's R reloads; Backspace stands you back at your spawn | In a mission Backspace starts it again at once and R still reloads | mission.rs, World::rules.no_reset | done |
 | R2.10 | finding | The browser check would find no new failure | Its title test reads the rendered text, so CSS uppercase made "Choomstar" read "CHOOMSTAR" | The title is drawn in small capitals, which keeps its text | tests/browser/interactions.py | done |
+| R2.11 | divergence | A course's gates could be spread over the floor a walk from the spawn reaches | On the Tobogán that floor is only the platform: the slide is surf ramps, so all eight gates stood at the top (the person: "tobogan level is messed up, the gates are all at the top") | Gates follow the map's own route, the weapon spots Chumontillado places along it, in the order a run meets them, evenly to the count asked; a gate counts within reach of its middle, whichever way is up | the_toboggan_course_runs_from_the_platform_down_the_slide_to_the_arena; breaks.json | done |
 
 ## Strings written by the agent
 

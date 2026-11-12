@@ -2672,5 +2672,12 @@
   "find": "                    if self.wave >= waves {",
   "replace": "                    if self.wave >= waves + 100 {",
   "test": "every_mission_can_be_cleared_inside_its_time"
+ },
+ {
+  "name": "CM a course follows the map's route",
+  "file": "crates/core/src/mission.rs",
+  "find": "                let mut left: Vec<V3> = w.map.pickups.iter().map(|&(at, _)| at).collect();",
+  "replace": "                let mut left: Vec<V3> = Vec::new();",
+  "test": "the_toboggan_course_runs_from_the_platform_down_the_slide_to_the_arena"
  }
 ]

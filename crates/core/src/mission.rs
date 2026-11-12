@@ -769,7 +769,15 @@ impl Run {
             }
             Part::Course => {
                 let n = spec.goal.gates.max(1) as usize;
-                let mut left = self.spread(n, me);
+                // the map's own route: Chumontillado places its weapons
+                // along the way a run goes (down the Tobogán's slide, over
+                // the Sierra), so a course follows them; the open floor
+                // makes up any the map lacks
+                let mut left: Vec<V3> = w.map.pickups.iter().map(|&(at, _)| at).collect();
+                if left.len() < n {
+                    let more = self.spread(n - left.len(), me);
+                    left.extend(more);
+                }
                 // in the order a walk from the spawn meets them
                 let mut from = me;
                 self.gates.clear();
@@ -782,6 +790,11 @@ impl Run {
                     from = left.remove(i);
                     self.gates.push(from);
                 }
+                // as many as the mission asks, evenly along the way
+                let all = std::mem::take(&mut self.gates);
+                self.gates = (0..n)
+                    .map(|i| all[i * (all.len() - 1) / (n - 1).max(1)])
+                    .collect();
                 self.gate = 0;
                 self.need = n as i32;
             }
@@ -1138,8 +1151,11 @@ impl Run {
             }
             Part::Course => {
                 if let Some(g) = self.gates.get(self.gate) {
+                    // within reach of its middle, whichever way is up (the Cubo)
                     let d = me.sub(*g);
-                    if d.len_xz() < GATE_REACH && d.y > -ONE && d.y < GATE_UP {
+                    if d.len() < GATE_REACH + GATE_UP / 2
+                        || (d.len_xz() < GATE_REACH && d.y > -ONE && d.y < GATE_UP)
+                    {
                         self.gate += 1;
                         self.done = self.gate as i32;
                     }
@@ -1649,6 +1665,20 @@ mod tests {
         w.players[0].body.origin = gates[5];
         run.step(&mut w, crate::input::FORWARD);
         assert_eq!(run.outcome.map(|o| o.cleared), Some(true));
+    }
+
+    #[test]
+    fn the_toboggan_course_runs_from_the_platform_down_the_slide_to_the_arena() {
+        let (run, w) = Run::start(index("toboggan").unwrap(), 0, false);
+        assert_eq!(run.gates.len(), 8);
+        let g = &run.gates;
+        // the platform stands 90 m up at z 240 to 252; the arena floor is
+        // at 0, z 20 down to -160
+        assert!(g[0].z > fx::int(90) && g[0].y > fx::int(20), "{:?}", g[0]);
+        assert!(g[7].y < fx::int(2) && g[7].z < 0, "{:?}", g[7]);
+        let on_slide = g.iter().filter(|p| p.z > fx::int(20) && p.y > fx::int(2)).count();
+        assert!(on_slide >= 4, "{on_slide} gates on the slide");
+        assert!(w.pickups.is_empty(), "a course carries no pickups");
     }
 
     #[test]
