@@ -389,7 +389,10 @@ pub fn results_panels(g: &Game) -> Vec<Panel> {
         return vec![p];
     };
     p.heading = s.get(if o.cleared { "cleared" } else { "failed" });
-    p.text = format!("{} {}", m.name, s.get(o.why));
+    p.text = s
+        .get("results_text")
+        .replace("{name}", &m.name)
+        .replace("{why}", &s.get(o.why));
     p.medal = Some(MedalMark {
         level: o.medal,
         mark: letter(g, o.medal),

@@ -39,6 +39,8 @@ const WAVE_SIZE: Fx = ONE * 35 / 100;
 /// A blinker moves this far from you (m) when it blinks.
 const BLINK_NEAR: i32 = 7;
 const BLINK_FAR: i32 = 13;
+/// A diving foe pulls back this far (m) after it touches.
+const RECOIL: i32 = 5;
 /// Orbs past this many are not fired (the page's drawing budget).
 pub const ORBS_MOST: usize = 700;
 
@@ -567,6 +569,17 @@ impl Foe {
         if self.touch == 0 && within(self.at, chest, reach) {
             self.touch = TOUCH_AGAIN;
             did.touched = s.contact;
+            // a diver pulls back after it touches, to come again
+            if gait(&s.kind) == Gait::Dives {
+                let away = self.at.sub(chest);
+                let away = if away == V3::ZERO {
+                    v3(0, 0, ONE)
+                } else {
+                    away.norm()
+                };
+                self.at = self.at.add(away.scale(fx::int(RECOIL)));
+                self.prev = self.at;
+            }
         }
         let _ = feet;
         // the attack's beat: wind up, fire its volleys, rest
@@ -720,6 +733,20 @@ mod tests {
         }
         assert!(fired >= 4, "{fired}");
         assert_eq!(f.pattern, "spiral_quad");
+    }
+
+    #[test]
+    fn a_moth_pulls_back_after_it_touches() {
+        let s = data().foe("moth").unwrap();
+        let mut f = Foe::new(s, v3(0, 0, -fx::int(1)), 0);
+        let mut rng = crate::rng::Rng::new(1);
+        let chest = v3(0, ONE, 0);
+        // it hovers 2 m up, 1 m off: it closes, then touches
+        let touched = (0..30)
+            .map(|_| f.step(0, chest, V3::ZERO, &[], &mut rng).touched)
+            .find(|&t| t > 0);
+        assert_eq!(touched, Some(14));
+        assert!(f.at.sub(chest).len() >= fx::int(RECOIL), "{:?}", f.at);
     }
 
     #[test]

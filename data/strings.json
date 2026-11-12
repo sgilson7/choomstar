@@ -314,5 +314,6 @@
   "mark_letter_1": "B",
   "mark_letter_2": "S",
   "mark_letter_3": "G",
-  "medals_earned": "{n} of {of} medals"
+  "medals_earned": "{n} of {of} medals",
+  "results_text": "{name}: {why}"
 }

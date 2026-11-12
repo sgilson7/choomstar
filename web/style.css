@@ -282,7 +282,7 @@ body[data-screen="results"] #overlay { background: radial-gradient(ellipse at ce
 #hud-m-carry { left: 24px; top: 142px; font-size: 15px; color: var(--ochre); transition: none; }
 #hud-m-medal { right: 24px; top: 58px; font-size: 14px; letter-spacing: 0.08em; color: var(--gold); transition: none; }
 #hud-m-restart { left: 50%; bottom: 14vh; transform: translateX(-50%); font-size: 14px; color: var(--ink-soft); transition: opacity 1.2s ease; }
-#hud-m-boss { left: 50%; top: 18px; transform: translateX(-50%); width: min(560px, 60vw); text-align: center; font-size: 14px; letter-spacing: 0.18em; text-transform: uppercase; border: 1px solid var(--umber-edge); transition: none; background: linear-gradient(to right, rgba(224, 65, 43, 0.85) 0 var(--fill, 100%), rgba(0, 0, 0, 0.6) var(--fill, 100%)); }
+#hud-m-boss { left: 50%; top: 64px; transform: translateX(-50%); width: min(560px, 60vw); text-align: center; font-size: 14px; letter-spacing: 0.18em; text-transform: uppercase; border: 1px solid var(--umber-edge); transition: none; background: linear-gradient(to right, rgba(224, 65, 43, 0.85) 0 var(--fill, 100%), rgba(0, 0, 0, 0.6) var(--fill, 100%)); }
 @media (max-width: 1000px) {
   body[data-screen="missions"] #overlay { grid-template-columns: 1fr; overflow: auto; }
   .chart { display: none; }
