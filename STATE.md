@@ -2,7 +2,7 @@
 
 The project's long-term memory, at most two pages. Rewrite it at each milestone (a stage boundary, a finished feature, a deploy) and before a handoff. After a compaction or in a new session, read this file and ask `tools/ask.py` for cards; do not re-read files it already summarises. `scripts/context_check.py` checks its size, its commit and the cards it cites.
 
-Commit: 19e8073
+Commit: fa75fab
 
 ## Where the build is
 
@@ -16,7 +16,7 @@ Code (card:mine for details):
 - chart.rs: view model (Chart, Entry, MedalMark), mission/results panels, mission HUD lines. game.rs: Screen::Missions/Results, acts menu.missions, mission.pick/start/retry/next, results.chart, save.load; Backspace restarts (R2.9).
 - web/app.js draws the chart SVG and the list; style.css chrome theme.
 
-Since dc3b8c2 (person's fixes, all live): Tobogán gates follow map routes (R2.11); 3 s count + 4 s round-end banner (R2.12, mission.rs waiting()); after gold the chart is first (R2.13); long jumps (R2.14): courses.rs (4 courses, space look via look.json `space`, Game.look_version → page resends uniforms), Part::LongJump, missions 51-54, 12 kinds.
+Since dc3b8c2 (person's fixes, all live): Tobogán gates follow map routes (R2.11); 3 s count + 4 s round-end banner (R2.12, mission.rs waiting()); after gold the chart is first (R2.13); long jumps (R2.14): courses.rs (4 courses, space look via look.json `space`, Game.look_version → page resends uniforms), Part::LongJump, missions 51-54, 12 kinds. Royales (R2.15, live fa75fab): royale.rs (scrapyard/spires/hub, 101 spawns, loot), Part::Royale, 100 bots team 0 stay down, mission::difficulty → (lives, level), Run.lives/standing, safest() respawn, measure "lives", missions 55-58, 13 kinds; world.rs view orders by far2 (squared), Swing.struck u128. Journal v8.
 
 ## What is next
 
