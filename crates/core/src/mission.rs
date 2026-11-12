@@ -677,9 +677,9 @@ impl Run {
         let k = self.seat(w, Role::Zombie)?;
         // (pace %, health, weapon, skin): a shambler, a runner, a brute
         let (pace, health, g, s) = match kind {
-            "runner" => (85, 40, Weapon::Navaja, 2),
-            "brute" => (60, 220, Weapon::Guadana, 6),
-            _ => (45, 60, Weapon::Punal, 4),
+            "runner" => (85, 40, Weapon::Navaja, crate::skins::ZOMBIE),
+            "brute" => (60, 220, Weapon::Guadana, crate::skins::ZOMBIE),
+            _ => (45, 60, Weapon::Punal, crate::skins::ZOMBIE),
         };
         let yaw = crate::geom::yaw_of(self.spawn.sub(at));
         let mut p = Player::at((at, yaw));
@@ -1727,6 +1727,70 @@ mod tests {
             .unwrap();
         assert_eq!(w.players[ally].team, w.players[0].team);
         assert!(!w.rules.stay_down);
+    }
+
+    /// CM-5: a player who fells every foe the moment it stands and walks
+    /// straight to each gate and relic clears every mission inside its
+    /// time, so no goal is out of reach of the rules.
+    fn oracle(k: usize) -> Option<Outcome> {
+        let (mut run, mut w) = Run::start(k, 0, false);
+        let most = run.spec().limit().max(600) * SECOND + SECOND;
+        let go = crate::input::Input {
+            keys: crate::input::FORWARD,
+            ..crate::input::Input::default()
+        };
+        let mut relic = 0;
+        for _ in 0..most {
+            w.step(&[go]);
+            w.players[0].health = HEALTH;
+            // fell the other side, as you would
+            for s in 1..w.players.len() {
+                if w.players[s].alive() && w.players[s].team != w.players[0].team {
+                    let h = w.players[s].health;
+                    w.hit(0, s, h);
+                }
+            }
+            for f in run.foes.iter_mut() {
+                f.hp = 0;
+            }
+            for d in w.dummies.iter_mut().filter(|d| d.kind == 0) {
+                d.down = 1;
+            }
+            run.orbs.clear();
+            match run.current() {
+                Part::Course => {
+                    if let Some(g) = run.gates.get(run.gate) {
+                        w.players[0].body.origin = *g;
+                    }
+                }
+                Part::Salvage => {
+                    w.players[0].body.origin = match run.relics.get(relic) {
+                        Some((p, _)) => {
+                            relic += 1;
+                            *p
+                        }
+                        None => run.spawn,
+                    };
+                }
+                _ => {}
+            }
+            if let Some(r) = run.repair {
+                w.players[0].body.origin = r;
+            }
+            run.step(&mut w, crate::input::FORWARD);
+            if run.outcome.is_some() {
+                return run.outcome;
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn every_mission_can_be_cleared_inside_its_time() {
+        for (k, m) in pack().missions.iter().enumerate() {
+            let o = oracle(k);
+            assert!(o.is_some_and(|o| o.cleared), "{} ({}): {:?}", m.id, m.kind, o);
+        }
     }
 
     #[test]

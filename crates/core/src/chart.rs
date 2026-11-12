@@ -99,11 +99,17 @@ pub struct Entry {
     pub action: crate::api::Action,
 }
 
+/// Choomstar (CM-Q6): Long Time Comin's diver, as Style Lab rendered it
+/// (copper, CM-Q7), beside the menu, the briefing and the results.
+pub const DIVER_STRIDE: &str = "art/diver_stride.jpg";
+pub const DIVER_BRIEFING: &str = "art/diver_three_quarter.jpg";
+pub const DIVER_RESULTS: &str = "art/diver_front.jpg";
+
 const SIDE: i32 = 1000;
 const NODE_R: i32 = 17;
 const RING_GAP: i32 = 5;
 /// Spoke labels sit this far out (thousandths).
-const SPOKE_LABEL: i32 = 496;
+const SPOKE_LABEL: i32 = 540;
 
 fn medal_key(m: u8) -> &'static str {
     match m {
@@ -366,6 +372,8 @@ pub fn mission_panels(g: &Game) -> Vec<Panel> {
             s.get("locked_by").replace("{list}", &list.join(", "))
         );
     }
+    brief.picture = DIVER_BRIEFING.into();
+    brief.picture_alt = s.get("diver_alt");
     let mut start = action(g, "mission.start", "", "start_mission", true);
     start.enabled = open;
     brief.actions = vec![start];
@@ -393,6 +401,8 @@ pub fn results_panels(g: &Game) -> Vec<Panel> {
         .get("results_text")
         .replace("{name}", &m.name)
         .replace("{why}", &s.get(o.why));
+    p.picture = DIVER_RESULTS.into();
+    p.picture_alt = s.get("diver_alt");
     p.medal = Some(MedalMark {
         level: o.medal,
         mark: letter(g, o.medal),

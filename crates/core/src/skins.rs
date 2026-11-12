@@ -34,10 +34,24 @@ pub enum Skin {
     // T34: Chumworld Arena's two knights, asked for on 2026-11-08
     BlackKnight,
     IvoryKnight,
+    /// Choomstar: a horde's zombie, a derelict crewman (CM-Q8). Not one to
+    /// choose: a mission's seat wears it by number `ZOMBIE`
+    Zombie,
 }
 
 /// How many skins there are to choose from.
 pub const COUNT: usize = 8;
+/// Choomstar: the zombie's number, past the skins to choose from.
+pub const ZOMBIE: u8 = COUNT as u8;
+
+/// A seat's skin by its number: one of the eight, or the zombie.
+pub fn of_index(k: u8) -> Skin {
+    if k == ZOMBIE {
+        Skin::Zombie
+    } else {
+        SKINS[k as usize % COUNT]
+    }
+}
 
 /// The skins in the order the setting steps through them; by default seat
 /// 1 wears the Hidalgo, then the Infanta, the Harlequin and El Sordo.
@@ -64,6 +78,7 @@ impl Skin {
             Skin::Torero => "torero",
             Skin::BlackKnight => "black_knight",
             Skin::IvoryKnight => "ivory_knight",
+            Skin::Zombie => "zombie",
         }
     }
 
@@ -144,6 +159,25 @@ pub fn parts(skin: Skin) -> Vec<Part> {
     use Limb::*;
     use Mesh::*;
     match skin {
+        // Choomstar (CM-Q8): a derelict crewman, hunched forward in a torn
+        // jumpsuit, green-grey skin and eyes lit cyan
+        Skin::Zombie => vec![
+            leg(p(Rod, [-11, 46, 0], [18, 92, 18], "suit"), LegL),
+            leg(p(Rod, [11, 46, 0], [18, 92, 18], "suit"), LegR),
+            leg(p(Round, [-11, 5, -3], [16, 10, 24], "boot"), LegL),
+            leg(p(Round, [11, 5, -3], [16, 10, 24], "boot"), LegR),
+            p(Round, [0, 92, 2], [44, 10, 30], "rust"),
+            p(Round, [0, 114, 0], [48, 46, 30], "suit"),
+            p(Round, [11, 120, -14], [16, 22, 4], "rust"),
+            p(Round, [-12, 104, -14], [12, 12, 4], "flesh"),
+            p(Round, [0, 136, -4], [42, 10, 30], "steel"),
+            p(Rod, [0, 142, -10], [14, 12, 14], "flesh"),
+            p(Sphere, [0, 153, -16], [32, 36, 32], "flesh"),
+            p(Sphere, [0, 143, -20], [24, 14, 22], "flesh"),
+            p(Dot, [-7, 157, -31], [7, 6, 3], "eye"),
+            p(Dot, [7, 157, -31], [7, 6, 3], "eye"),
+            p(Dot, [0, 145, -31], [10, 6, 3], "mouth"),
+        ],
         Skin::Hidalgo => vec![
             leg(p(Rod, [-11, 46, 0], [18, 92, 18], "hose"), LegL),
             leg(p(Rod, [11, 46, 0], [18, 92, 18], "hose"), LegR),
@@ -529,7 +563,7 @@ mod tests {
     #[test]
     fn every_part_of_every_skin_has_its_colour_in_the_look() {
         let l = look();
-        for s in SKINS {
+        for s in SKINS.iter().copied().chain([Skin::Zombie]) {
             let names = l
                 .skins
                 .get(s.key())
@@ -563,7 +597,7 @@ mod tests {
         // body scaled to 0.92 m drew 0.33 m. Every mesh a skin uses reaches
         // at least 90% of its box's half-width across x or z
         let table = crate::prim::MeshTable::default();
-        for s in SKINS {
+        for s in SKINS.iter().copied().chain([Skin::Zombie]) {
             for part in parts(s) {
                 let v = table.vertices(part.mesh.into());
                 let reach = v

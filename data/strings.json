@@ -315,5 +315,6 @@
   "mark_letter_2": "S",
   "mark_letter_3": "G",
   "medals_earned": "{n} of {of} medals",
-  "results_text": "{name}: {why}"
+  "results_text": "{name}: {why}",
+  "diver_alt": "The diver in a copper helmet and grey suit"
 }

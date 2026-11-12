@@ -306,6 +306,13 @@ async function main() {
       (p.actions || []).forEach((a) => box.append(button(a)));
       return box;
     }
+    // Choomstar: a picture the core names beside the panel (the diver)
+    if (p.picture) {
+      const pic = make("img", undefined, "picture");
+      pic.src = p.picture;
+      pic.alt = p.picture_alt;
+      box.append(pic);
+    }
     if (p.medal) {
       const badge = make("div", p.medal.mark, "medal");
       badge.dataset.medal = p.medal.level;

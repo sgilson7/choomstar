@@ -1228,6 +1228,12 @@ impl World {
         false
     }
 
+    /// Choomstar: `dmg` from seat `by` to body `k` of the targets list
+    /// (seats, then straw targets), as a shot would deal it. Whether it fell.
+    pub fn hit(&mut self, by: usize, k: usize, dmg: i32) -> bool {
+        self.hurt(by, k, dmg)
+    }
+
     /// Choomstar: `dmg` to seat `k` from something that is not a seat (an
     /// orb, a foe's touch) at `from`. Whether it fell.
     pub fn strike(&mut self, k: usize, dmg: i32, from: V3) -> bool {
@@ -1725,7 +1731,7 @@ impl World {
                 // M6: each seat in its skin, holding its weapon as it
                 // holds it, legs in stride
                 let figure = crate::skins::Figure {
-                    skin: crate::skins::SKINS[p.skin as usize % crate::skins::SKINS.len()],
+                    skin: crate::skins::of_index(p.skin),
                     lifelike: p.lifelike,
                     feet: p.prev.lerp(p.body.origin, alpha),
                     yaw: p.aim.yaw,

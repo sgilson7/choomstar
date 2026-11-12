@@ -2665,5 +2665,12 @@
   "find": "            t.run = t.run * self.run_pct / 100;",
   "replace": "            t.run = t.run * 100 / 100;",
   "test": "a_seats_pace_scales_its_run_speed_and_is_the_tunings_by_default"
+ },
+ {
+  "name": "CM-5 an arena ends when its last wave is cleared",
+  "file": "crates/core/src/mission.rs",
+  "find": "                    if self.wave >= waves {",
+  "replace": "                    if self.wave >= waves + 100 {",
+  "test": "every_mission_can_be_cleared_inside_its_time"
  }
 ]

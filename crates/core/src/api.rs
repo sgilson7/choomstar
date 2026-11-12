@@ -144,6 +144,12 @@ pub struct Panel {
     /// Choomstar: the mission list's entries
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub entries: Vec<crate::chart::Entry>,
+    /// Choomstar: a picture beside the panel (a file under web/art/) and
+    /// its words for a reader who cannot see it
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub picture: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub picture_alt: String,
     /// Choomstar: a medal shown large (results)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub medal: Option<crate::chart::MedalMark>,
@@ -595,6 +601,8 @@ pub(crate) fn panel(id: &str) -> Panel {
         fields: Vec::new(),
         cards: Vec::new(),
         entries: Vec::new(),
+        picture: String::new(),
+        picture_alt: String::new(),
         medal: None,
     }
 }
@@ -961,6 +969,8 @@ pub fn ui(g: &Game) -> Ui {
             let mut p = panel("menu");
             p.heading = g.strings.get("title");
             p.text = g.strings.get("menu_text");
+            p.picture = crate::chart::DIVER_STRIDE.into();
+            p.picture_alt = g.strings.get("diver_alt");
             // Choomstar: missions first; single player, so no online play
             p.actions = vec![
                 action(g, "menu.missions", "", "missions", false),
