@@ -63,7 +63,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     }
    ],
    "brief": "The Mercado's doors are open. Last one minute."
@@ -197,7 +197,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     }
    ],
    "brief": "Defeat forty zombies."
@@ -495,7 +495,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     },
     {
      "zombie": "runner",
@@ -656,10 +656,10 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     }
    ],
-   "brief": "A scythe and thirty zombies."
+   "brief": "A guadaña and thirty zombies."
   },
   {
    "id": "salvage_molino",
@@ -752,7 +752,7 @@
   },
   {
    "id": "pole_vault",
-   "name": "Pole Vault",
+   "name": "Garrocha",
    "kind": "targets",
    "map": "sierra",
    "loadout": "garrocha",
@@ -852,7 +852,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     },
     {
      "zombie": "runner",
@@ -1222,7 +1222,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     },
     {
      "zombie": "runner",
@@ -1608,7 +1608,7 @@
    "foes": [
     {
      "zombie": "shambler",
-     "waves": "ramp"
+     "waves": "rising"
     },
     {
      "zombie": "runner",

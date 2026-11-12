@@ -5,6 +5,7 @@ behaviour broken does not cover it. (After Long Time Comin' and Lowballer.)
 
     python3 scripts/break_tests.py              every break in tests/breaks.json
     python3 scripts/break_tests.py title intro  the breaks whose names hold these words
+    python3 scripts/break_tests.py --rotted     only that each break's text is still in its file, once
 
 tests/breaks.json is a list of objects:
 
@@ -15,12 +16,14 @@ tests/breaks.json is a list of objects:
      "test": "an_empty_title_is_rejected_by_name"}
 
 The file is restored after each break, whatever happens. The script exits
-non-zero when a break leaves its test passing, when its text is no longer in
-its file (the break has rotted), or when the list is empty (a proof with
-nothing in it proves nothing). It is slow on a large list, so it runs outside
+non-zero when a break leaves its test passing, when the broken code does not
+compile (R6.5) or its test name matches no test (R9.8), when its text is no longer in its file (the break has
+rotted), or when the list is empty (a proof with nothing in it proves
+nothing). It is slow on a large list, so it runs outside
 the everyday check; run it after adding tests and before a handoff.
 """
 import json
+import re
 import pathlib
 import subprocess
 import sys
@@ -29,7 +32,24 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 LIST = ROOT / "tests" / "breaks.json"
 
 
+def rotted():
+    """T24: each break's text still in its file, once: fast, so the everyday
+    check runs it. A commit that runs only its own breaks left ten rows of
+    T20 to T23 pointing at code that had changed (R20.3)."""
+    bad = []
+    for b in json.loads(LIST.read_text()):
+        n = (ROOT / b["file"]).read_text().count(b["find"])
+        if n != 1:
+            print(f"  ROTTED  {b['name']}: the text to break appears {n} times in {b['file']}")
+            bad.append(b["name"])
+    if bad:
+        sys.exit(f"{len(bad)} breaks have rotted: point each at the code its test now covers")
+    print("every break's text is in its file once")
+
+
 def main(words):
+    if words == ["--rotted"]:
+        return rotted()
     breaks = json.loads(LIST.read_text())
     if words:
         breaks = [b for b in breaks if any(w in b["name"] for w in words)]
@@ -51,8 +71,18 @@ def main(words):
             )
         finally:
             path.write_text(original)
-        if run.returncode == 0:
+        if run.returncode == 0 and not any(m != "0" for m in re.findall(r"running (\d+) tests?", run.stdout)):
+            # a test name that matches no test runs nothing and passes: the
+            # row names a test that is gone (renamed), not a weak one (R9.8)
+            print(f"  NOTEST  {b['name']}: no test is named {b['test']}")
+            bad.append(b["name"])
+        elif run.returncode == 0:
             print(f"  MISSED  {b['name']}: {b['test']} still passes with the behaviour broken")
+            bad.append(b["name"])
+        elif "could not compile" in run.stderr:
+            # a break that does not compile proves nothing about the test
+            # (R6.5): it is a broken row, not a caught one
+            print(f"  NOBUILD {b['name']}: the broken code does not compile")
             bad.append(b["name"])
         else:
             print(f"  caught  {b['name']}")

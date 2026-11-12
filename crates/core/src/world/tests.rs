@@ -1,0 +1,2484 @@
+//! The movement's behaviour, through the world as a player meets it. Each
+//! expected value is worked out by hand from `movement::TUNING` in the
+//! test's comment.
+
+use super::*;
+use crate::fx::int;
+use crate::geom::yaw_of;
+use crate::gravity::Turn;
+use crate::input::{CROUCH, FORWARD, JUMP, LEFT, RIGHT, VINE};
+use crate::movement::{Mover, TUNING};
+
+fn keys(k: u32) -> Input {
+    Input {
+        keys: k,
+        ..Input::default()
+    }
+}
+
+fn run(w: &mut World, input: Input, ticks: usize) {
+    for _ in 0..ticks {
+        w.step(&[input]);
+    }
+}
+
+/// A body alone in the practice room's map, for the mover directly.
+fn body_at(p: V3) -> Body {
+    Body::at(p)
+}
+
+fn near(a: Fx, b: Fx, within: Fx) -> bool {
+    (a - b).abs() <= within
+}
+
+#[test]
+fn a_player_at_the_spawn_comes_to_rest_on_the_floor() {
+    let mut w = World::practice();
+    run(&mut w, Input::default(), 60);
+    let b = w.players[0].body;
+    assert!(b.on_ground, "{b:?}");
+    assert_eq!(b.velocity, V3::ZERO);
+    // the floor's top is y = 0; a trace stops 1/1024 m short at most
+    assert!(b.origin.y >= 0 && b.origin.y < ONE / 100, "{}", b.origin.y);
+}
+
+#[test]
+fn running_forward_reaches_the_run_speed_and_no_more() {
+    let mut w = World::practice();
+    // the spawn faces −z (yaw 0) down the open middle of the room
+    run(&mut w, keys(FORWARD), 90);
+    let s = w.players[0].body.speed();
+    // friction 6 against acceleration 10 settles at the run speed: each tick
+    // adds 10 × 8 / 60 = 1.33 m/s, more than friction's 6 × 8 / 60 = 0.8 takes,
+    // and the add is capped where the speed meets 8
+    // T3: the run speed is 9
+    assert!(near(s, int(9), ONE / 20), "{}", fx::decimal(s, 3));
+}
+
+#[test]
+fn air_strafing_with_the_wish_square_to_the_velocity_adds_the_cap_at_right_angles() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    // high above the room, nothing to hit for a second
+    let mut b = body_at(v3(0, int(200), 0));
+    b.velocity = v3(int(10), 0, 0);
+    for _ in 0..60 {
+        let v = b.velocity;
+        let yaw = yaw_of(v3(-v.z, 0, v.x));
+        m.tick(&mut b, &keys(FORWARD), yaw, yaw);
+    }
+    // two sub-steps a tick: the first adds the whole cap, 0.8, square to the
+    // velocity; the second finds 0.8 already along the wish and adds nothing.
+    // So speed² grows by 0.64 a tick: √(100 + 60 × 0.64) = 11.77 m/s
+    let s = b.speed();
+    assert!(near(s, ONE * 1177 / 100, ONE / 20), "{}", fx::decimal(s, 3));
+}
+
+#[test]
+fn above_the_run_speed_a_wish_already_met_along_its_way_adds_nothing() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    let mut b = body_at(v3(0, int(200), 0));
+    // 12 m/s north; D held with the view at 30°, so the wish points 60° off
+    // the velocity: 12 × cos 60° = 6 m/s along it already. Past the air's
+    // cap (0.8), nothing is added; without the cap 8 − 6 = 2 would be
+    b.velocity = v3(0, 0, -int(12));
+    for _ in 0..60 {
+        m.tick(&mut b, &keys(RIGHT), fx::deg(30), fx::deg(30));
+    }
+    assert_eq!(b.speed(), int(12));
+}
+
+#[test]
+fn holding_jump_hops_again_on_every_landing() {
+    let mut w = World::practice();
+    run(&mut w, Input::default(), 30);
+    let mut jumps = 0;
+    for _ in 0..180 {
+        w.step(&[keys(JUMP)]);
+        if w.players[0].events.jumped {
+            jumps += 1;
+        }
+    }
+    // 7.92 m/s up under 18 m/s² (T1): 0.88 s, 53 ticks a hop, so 180 ticks
+    // hold hops starting at about 0, 53, 106 and 159
+    assert_eq!(jumps, 4);
+}
+
+#[test]
+fn hopping_and_strafing_builds_speed_past_the_run_and_landing_late_does_not() {
+    let hop = |late: usize| {
+        // a bare floor 400 m across: the room's ramps would get in the way of
+        // the circles a strafer turns
+        let mut w = World::practice();
+        w.map = Rc::new(crate::map::Map {
+            brushes: vec![crate::map::block(
+                v3(-int(200), -ONE, -int(200)),
+                v3(int(200), 0, int(200)),
+                crate::map::Surface::Floor,
+            )],
+            spawns: vec![(V3::ZERO, 0)],
+            ..crate::map::Map::default()
+        });
+        w.players[0].body.origin = V3::ZERO;
+        w.players[0].prev = V3::ZERO;
+        run(&mut w, Input::default(), 10);
+        // run up to speed first: a jump held from a standstill never meets
+        // the ground, so only the air's cap is ever added
+        run(&mut w, keys(FORWARD), 60);
+        let mut on = 0;
+        for _ in 0..150 {
+            let b = w.players[0].body;
+            let v = b.velocity;
+            // the wish square to the velocity, turning left
+            w.players[0].aim.yaw = yaw_of(v3(-v.z, 0, v.x));
+            let k = if b.on_ground {
+                on += 1;
+                if on > late {
+                    on = 0;
+                    FORWARD | JUMP
+                } else {
+                    FORWARD
+                }
+            } else {
+                FORWARD
+            };
+            w.step(&[keys(k)]);
+        }
+        w.players[0].body.speed()
+    };
+    let on_time = hop(0);
+    let late = hop(2);
+    // 2.5 s of hops on time: each tick in the air adds 0.64 to speed², from
+    // 64: about √(64 + 0.64 × 140) ≈ 12.4 m/s, a little less for the ticks
+    // on the ground
+    // with T1's longer flights a late hop still gains a little in the air,
+    // but the two ticks of friction at each landing give most of it back
+    assert!(on_time > int(11), "on time: {}", fx::decimal(on_time, 2));
+    assert!(
+        on_time - late > int(2),
+        "on time {}, late {}",
+        fx::decimal(on_time, 2),
+        fx::decimal(late, 2)
+    );
+}
+
+#[test]
+fn a_surf_ramp_gives_no_footing_and_speeds_a_surfer_along_it() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    // the west face of the ramp whose ridge is at x = 0 (7 up over 5.25
+    // across), half way up, moving north along it at 10 m/s
+    let (x, y) = (-ONE * 2625 / 1000, ONE * 35 / 10);
+    let mut b = body_at(v3(x - HALF - ONE * 3 / 10, y, int(10)));
+    // arriving at the face: 6 m/s into it (east), 10 along it (north)
+    b.velocity = v3(int(6), 0, -int(10));
+    // the ramp's west face, and the box's corner that meets it first
+    let face = *w
+        .map
+        .brushes
+        .iter()
+        .filter(|r| r.surface == crate::map::Surface::Ramp && r.mins.x > int(-10))
+        .flat_map(|r| r.planes.iter())
+        .find(|p| p.n.x < 0 && p.n.y > 0)
+        .unwrap();
+    // outside the brush is n · p > d, so the gap is how far past d
+    let gap = |b: &Body| face.n.dot(b.origin.add(v3(crate::movement::HALF_WIDTH, 0, 0))) - face.d;
+    let mut grounded = 0;
+    let mut widest = 0;
+    for t in 0..30 {
+        // a surfer's way: the view north along the ramp, D held into it (east)
+        m.tick(&mut b, &keys(RIGHT), 0, 0);
+        if b.on_ground {
+            grounded += 1;
+        }
+        // from the third tick, once it has reached the face
+        if t >= 3 {
+            widest = widest.max(gap(&b));
+        }
+    }
+    // held on the face: the box never more than 5 cm off it (a face that
+    // threw back what went into it would bounce the surfer away)
+    assert!(widest < ONE / 20, "{}", fx::decimal(widest, 3));
+    assert_eq!(grounded, 0, "a ramp face at 53° is never ground");
+    assert!(b.velocity.len() > int(10), "{}", fx::decimal(b.velocity.len(), 2));
+    // still on the ramp's face, not thrown off it: within a metre of it
+    assert!(b.origin.x > x - int(2), "{}", fx::decimal(b.origin.x, 2));
+}
+
+/// Half the box's width plus a hair: a box beside a face at x touches it at
+/// x − HALF.
+const HALF: Fx = crate::movement::HALF_WIDTH + ONE / 50;
+
+#[test]
+fn crouching_at_a_run_slides_at_eleven_metres_a_second_and_slows_slowly() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    w.step(&[keys(FORWARD | CROUCH)]);
+    assert!(w.players[0].events.slid);
+    // 1.4 × 9 = 12.6 (T3), less one tick of slide friction 0.6 × 12.6 / 60 = 0.13
+    let s = w.players[0].body.speed();
+    assert!(near(s, ONE * 1247 / 100, ONE / 20), "{}", fx::decimal(s, 3));
+    run(&mut w, keys(CROUCH), 30);
+    let after = w.players[0].body.speed();
+    // half a second at friction 0.6: about 11.1 × (1 − 0.01)^30 = 8.2
+    // half a second at friction 0.6: about 12.47 × (1 − 0.01)^30 = 9.2
+    assert!(after > int(9), "{}", fx::decimal(after, 3));
+}
+
+#[test]
+fn a_second_slide_within_a_quarter_second_gives_no_boost() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    run(&mut w, keys(FORWARD | CROUCH), 5);
+    run(&mut w, keys(FORWARD), 5);
+    let before = w.players[0].body.speed();
+    w.step(&[keys(FORWARD | CROUCH)]);
+    assert!(w.players[0].events.slid);
+    // 10 ticks after the first slide began, inside slide_rest's 15
+    assert!(w.players[0].body.speed() <= before, "no boost inside slide_rest");
+}
+
+#[test]
+fn a_jump_out_of_a_slide_adds_speed_along_and_up() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    run(&mut w, keys(FORWARD | CROUCH), 4);
+    let before = w.players[0].body.speed();
+    w.step(&[keys(CROUCH | JUMP)]);
+    assert!(w.players[0].events.jumped);
+    let gain = w.players[0].body.speed() - before;
+    // + slide_jump 2.5 (T1): the jump comes before friction (Source's
+    // order), so that tick takes none
+    assert!(near(gain, ONE * 35 / 10, ONE / 50), "{}", fx::decimal(gain, 3));
+    // up: 7.92 + 1.5 = 9.42. Crouch is held, so the body is ducked, and a
+    // ducked jump sets the speed up rather than adding to it: the half of
+    // gravity before the jump is dropped, and the two after it (in the jump
+    // and at the tick's end) take 0.15 each: 9.12
+    let up = w.players[0].body.velocity.y;
+    // T3: 7.92 + 0.5 = 8.42, less the two halves after: 8.12
+    assert!(near(up, ONE * 812 / 100, ONE / 50), "{}", fx::decimal(up, 3));
+}
+
+#[test]
+fn three_wall_jumps_a_flight_each_pushing_up_and_out_and_a_fourth_does_nothing() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    // beside the west wall (its face at x = −32), well off the floor
+    let mut b = body_at(v3(int(-32) + HALF, int(6), 0));
+    b.velocity = v3(0, 0, -int(6));
+    for k in 0..4 {
+        b.origin.x = int(-32) + HALF;
+        b.velocity.x = 0;
+        let ev = m.tick(&mut b, &keys(JUMP), 0, 0);
+        if k < 3 {
+            assert!(ev.wall_jumped, "jump {k}");
+            // 5 m/s out (east), up at 6 less half a tick's gravity, along the
+            // wall kept
+            assert!(
+                near(b.velocity.x, int(5), ONE / 100),
+                "{}",
+                fx::decimal(b.velocity.x, 3)
+            );
+            assert!(
+                near(b.velocity.y, int(6) - int(18) / 120, ONE / 50),
+                "{}",
+                fx::decimal(b.velocity.y, 3)
+            );
+            assert!(near(b.velocity.z, -int(6), ONE / 50));
+        } else {
+            assert!(!ev.wall_jumped, "a fourth");
+        }
+        // let go of jump so the next press is fresh
+        m.tick(&mut b, &Input::default(), 0, 0);
+    }
+    assert_eq!(b.wall_jumps, 3);
+}
+
+#[test]
+fn holding_jump_against_a_wall_does_not_spend_the_wall_jumps() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    let mut b = body_at(v3(int(-32) + HALF, int(6), 0));
+    b.old_jump = true;
+    for _ in 0..10 {
+        b.origin.x = int(-32) + HALF;
+        m.tick(&mut b, &keys(JUMP), 0, 0);
+    }
+    assert_eq!(b.wall_jumps, 0);
+}
+
+#[test]
+fn a_slam_drops_at_thirty_and_a_jump_off_its_landing_goes_higher_than_a_jump() {
+    let mut w = World::practice();
+    w.players[0].body.origin = v3(int(-28), int(8), int(-28));
+    w.players[0].body.since_slam = 1_000;
+    w.step(&[keys(CROUCH)]);
+    assert!(w.players[0].events.slammed);
+    // −30, less a tick's gravity in its two halves (18 / 60 = 0.3)
+    let vy = w.players[0].body.velocity.y;
+    assert!(
+        near(vy, -int(30) - int(18) / 60, ONE / 50),
+        "{}",
+        fx::decimal(vy, 3)
+    );
+    let mut landed = false;
+    for _ in 0..40 {
+        w.step(&[keys(CROUCH)]);
+        if w.players[0].events.landed {
+            landed = true;
+            break;
+        }
+    }
+    assert!(landed);
+    w.step(&[keys(JUMP)]);
+    let ev = w.players[0].events;
+    assert!(ev.jumped && ev.bounced, "{ev:?}");
+    // fell about 8 m: 60% is 4.8 m, √(2 × 18 × 4.8) = 13.1 m/s up, well over a
+    // jump's 5.6
+    let up = w.players[0].body.velocity.y;
+    assert!(up > int(12), "{}", fx::decimal(up, 2));
+}
+
+#[test]
+fn the_slope_is_walked_up_to_the_balcony() {
+    let mut w = World::practice();
+    // at the slope's foot, facing south (yaw a half turn) up it
+    w.players[0].body.origin = v3(int(28), 0, int(4));
+    w.players[0].aim.yaw = fx::HALF_TURN;
+    run(&mut w, keys(FORWARD), 240);
+    let p = w.players[0].body.origin;
+    assert!(p.y >= map::BALCONY_Y - ONE / 100, "{}", fx::decimal(p.y, 2));
+}
+
+#[test]
+fn r_puts_the_player_back_at_the_spawn() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    w.step(&[keys(crate::input::RESET)]);
+    assert_eq!(w.players[0].body.origin, w.map.spawns[0].0);
+    assert_eq!(w.players[0].body.velocity, V3::ZERO);
+}
+
+#[test]
+fn the_same_records_give_the_same_world() {
+    let script = |t: u64| Input {
+        keys: [FORWARD, FORWARD | JUMP, LEFT | JUMP, CROUCH][(t / 23 % 4) as usize],
+        dx: ((t * 37) % 400) as i32 - 200,
+        dy: ((t * 11) % 60) as i32 - 30,
+        ..Input::default()
+    };
+    let play = || {
+        let mut w = World::practice();
+        for t in 0..600 {
+            w.step(&[script(t)]);
+        }
+        w
+    };
+    assert_eq!(play(), play());
+}
+
+#[test]
+fn speed_reads_with_one_decimal() {
+    assert_eq!(speed_text(ONE * 173 / 10), "17.3");
+    assert_eq!(speed_text(int(8)), "8.0");
+    assert_eq!(speed_text(0), "0.0");
+}
+
+#[test]
+fn the_tuning_is_the_mockup_pages_numbers() {
+    // the journal's Mockup page, 2026-11-04: run 8, gravity 18, jump 5.6,
+    // cap 0.8, air accel 40, slide 1.4× run, three wall jumps
+    // T1 doubled the jump's height: 5.6 × √2 = 7.92 m/s
+    assert_eq!(
+        (
+            TUNING.run,
+            TUNING.gravity,
+            TUNING.jump,
+            TUNING.air_cap,
+            TUNING.air_accelerate
+        ),
+        (int(9), int(18), ONE * 792 / 100, ONE * 8 / 10, int(40))
+    );
+    assert_eq!((TUNING.slide_boost_pct, TUNING.wall_jumps), (140, 3));
+}
+
+#[test]
+fn a_jump_rises_twice_as_high_as_the_mockups() {
+    let w = World::practice();
+    let height = |jump: Fx| {
+        let mut m = Mover::new(&w.map);
+        m.t.jump = jump;
+        let mut b = body_at(v3(int(8), 0, int(16)));
+        for _ in 0..30 {
+            m.tick(&mut b, &Input::default(), 0, 0);
+        }
+        let floor = b.origin.y;
+        m.tick(&mut b, &keys(JUMP), 0, 0);
+        let mut top = floor;
+        for _ in 0..60 {
+            m.tick(&mut b, &Input::default(), 0, 0);
+            top = top.max(b.origin.y);
+        }
+        top - floor
+    };
+    let (before, now) = (height(ONE * 56 / 10), height(TUNING.jump));
+    // height goes with the square of the speed: (7.92 / 5.6)² = 2.0 (T1);
+    // each about v² / 2g, 0.87 and 1.74 m, less the ticks' steps
+    let ratio = fx::div(now, before);
+    assert!(
+        near(ratio, int(2), ONE / 20),
+        "{} over {}: {}",
+        fx::decimal(now, 3),
+        fx::decimal(before, 3),
+        fx::decimal(ratio, 3)
+    );
+    assert!(near(now, ONE * 1742 / 1000, ONE / 10), "{}", fx::decimal(now, 3));
+}
+
+#[test]
+fn a_slide_jump_counts_up_to_a_fifth_of_a_second_after_the_slide_ends() {
+    let after = |ticks: usize| {
+        let mut w = World::practice();
+        run(&mut w, keys(FORWARD), 60);
+        run(&mut w, keys(FORWARD | CROUCH), 4);
+        // let go of crouch: the slide ends, then wait before jumping
+        run(&mut w, keys(FORWARD), ticks);
+        w.step(&[keys(FORWARD | JUMP)]);
+        w.players[0].events.slide_jumped
+    };
+    // slide_jump_ticks is 12 (T1): the slide ends on the first tick without
+    // crouch, so a jump 11 ticks later is the 12th tick since
+    assert!(after(11), "200 ms after");
+    assert!(!after(15), "250 ms after");
+}
+
+#[test]
+fn holding_crouch_and_jump_chains_slide_jumps_landing_after_landing() {
+    let mut w = World::practice();
+    // a bare floor, room to run straight
+    w.map = Rc::new(crate::map::Map {
+        brushes: vec![crate::map::block(
+            v3(-int(400), -ONE, -int(400)),
+            v3(int(400), 0, int(400)),
+            crate::map::Surface::Floor,
+        )],
+        spawns: vec![(V3::ZERO, 0)],
+        ..crate::map::Map::default()
+    });
+    w.players[0].body.origin = V3::ZERO;
+    run(&mut w, keys(FORWARD), 60);
+    let mut chained = 0;
+    for _ in 0..300 {
+        w.step(&[keys(FORWARD | CROUCH | JUMP)]);
+        if w.players[0].events.slide_jumped {
+            chained += 1;
+        }
+    }
+    // each landing slides (crouch held) and jumps out of it at once: five
+    // seconds of 0.88 s flights hold five; each adds 2.5 m/s, from the
+    // boost's 11.2 on the first: about 11.2 + 5 × 2.5 = 23.7 m/s
+    assert!(chained >= 5, "{chained} slide jumps in a row");
+    let s = w.players[0].body.speed();
+    // T3: from the boost's 12.6, + 5 × 3.5 = 30.1 m/s
+    assert!(s > int(25), "{}", fx::decimal(s, 2));
+}
+
+#[test]
+fn crouching_on_the_way_down_from_a_jump_readies_a_slide_and_does_not_slam() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    w.step(&[keys(FORWARD | JUMP)]);
+    run(&mut w, keys(FORWARD), 40);
+    // at the top of a jump, 1.74 m up: under slam_above's 3 m
+    w.step(&[keys(FORWARD | CROUCH)]);
+    assert!(!w.players[0].events.slammed);
+    let mut slid = false;
+    for _ in 0..30 {
+        w.step(&[keys(FORWARD | CROUCH)]);
+        slid |= w.players[0].events.slid;
+    }
+    assert!(slid, "landing with crouch held slides");
+}
+
+#[test]
+fn a_slide_a_third_of_a_second_after_the_last_boosts_again() {
+    let mut w = World::practice();
+    run(&mut w, keys(FORWARD), 60);
+    run(&mut w, keys(FORWARD | CROUCH), 3);
+    // back to running: friction takes the 11.2 back down to 8 within a few
+    // ticks, and acceleration holds it there
+    run(&mut w, keys(FORWARD), 17);
+    let before = w.players[0].body.speed();
+    assert!(near(before, int(9), ONE / 10), "{}", fx::decimal(before, 2));
+    // 20 ticks since the first slide began: past slide_rest's 15 (T1)
+    w.step(&[keys(FORWARD | CROUCH)]);
+    let s = w.players[0].body.speed();
+    assert!(s > int(11), "boosted again: {}", fx::decimal(s, 2));
+}
+
+#[test]
+fn under_the_run_speed_the_keys_steer_outright_in_the_air() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    // standing in the air, D held: the velocity goes straight toward the
+    // run speed east at 60 m/s² (T2), so 9 m/s (T3) in 9 / 60 = 0.15 s, 9 ticks
+    let mut b = body_at(v3(0, int(200), 0));
+    for _ in 0..9 {
+        m.tick(&mut b, &keys(RIGHT), 0, 0);
+    }
+    assert!(
+        near(b.velocity.x, int(9), ONE / 20),
+        "{}",
+        fx::decimal(b.velocity.x, 3)
+    );
+    assert!(b.velocity.z.abs() < ONE / 100);
+    // moving 6 m/s north, S held: north to 9 m/s south is 15 m/s of change,
+    // 15 / 60 = 0.25 s, so after 15 ticks it moves south at 9
+    let mut c = body_at(v3(0, int(200), 0));
+    c.velocity = v3(0, 0, -int(6));
+    for _ in 0..15 {
+        m.tick(&mut c, &keys(crate::input::BACK), 0, 0);
+    }
+    assert!(
+        near(c.velocity.z, int(9), ONE / 20),
+        "{}",
+        fx::decimal(c.velocity.z, 3)
+    );
+}
+
+#[test]
+fn above_the_run_speed_w_alone_turns_toward_the_view_and_keeps_the_speed() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    let mut b = body_at(v3(0, int(200), 0));
+    // 15 m/s north, the view 45° to the north-east, W held
+    b.velocity = v3(0, 0, -int(15));
+    let view = yaw_of(v3(ONE, 0, -ONE));
+    for _ in 0..30 {
+        m.tick(&mut b, &keys(FORWARD), view, view);
+    }
+    let s = b.speed();
+    assert!(near(s, int(15), ONE / 20), "{}", fx::decimal(s, 3));
+    // turned most of the way to the view: the east part at least 9 of the
+    // 10.6 that 45° would give
+    assert!(b.velocity.x > int(9), "{}", fx::decimal(b.velocity.x, 3));
+}
+
+#[test]
+fn once_on_a_ramp_holding_w_into_it_costs_no_speed_along_it() {
+    let w = World::practice();
+    let mut m = Mover::new(&w.map);
+    let (x, y) = (-ONE * 2625 / 1000, ONE * 35 / 10);
+    let mut b = body_at(v3(x - HALF - ONE * 3 / 10, y, int(10)));
+    b.velocity = v3(int(6), 0, -int(10));
+    let east = yaw_of(v3(ONE, 0, 0));
+    let mut along_at_contact = None;
+    let mut grounded = 0;
+    for _ in 0..30 {
+        m.tick(&mut b, &keys(FORWARD), east, east);
+        grounded += b.on_ground as i32;
+        if b.since_touch == 0 && along_at_contact.is_none() {
+            along_at_contact = Some(-b.velocity.z);
+        }
+    }
+    // W steers toward the view in the air, so before the face it turns the
+    // velocity a little toward the ramp (R3.1). On the face the air
+    // control waits (T2), and the speed along the ramp (north) holds
+    let at = along_at_contact.expect("reached the face");
+    assert_eq!(grounded, 0);
+    assert!(
+        -b.velocity.z >= at - ONE / 100,
+        "{} at contact, {} after",
+        fx::decimal(at, 2),
+        fx::decimal(-b.velocity.z, 2)
+    );
+}
+
+// ---- M2: the guns ----------------------------------------------------------
+
+fn fire() -> Input {
+    Input {
+        buttons: crate::input::FIRE,
+        ..Input::default()
+    }
+}
+
+/// The room, settled, the player still at the spawn facing north.
+fn settled(bot: Bot) -> World {
+    let mut w = World::room(bot);
+    run(&mut w, Input::default(), 30);
+    w
+}
+
+/// The pitch (angle units) that aims from the spawn's eye at a height
+/// `y` m on the straw target 20 m north (at (8, −4)).
+fn pitch_at(y_hundredths: i32) -> i32 {
+    // atan2 gives 0 to a whole turn; a pitch is signed
+    fx::wrap(fx::atan2(y_hundredths * ONE / 100 - ONE * 165 / 100, int(20)))
+}
+
+#[test]
+fn a_pistol_shot_takes_fifty_from_a_straw_head_and_twenty_five_from_its_body() {
+    // level from the eye (1.65 m), 20 m north: the target's head, at 1.65
+    let mut w = settled(Bot::Moves);
+    w.step(&[fire()]);
+    assert_eq!(w.dummies[0].health, 50, "a headshot: 25 × 2");
+    assert!(w.players[0].hit_mark > 0);
+    // aimed at 1.1 m, the body
+    let mut w = settled(Bot::Moves);
+    w.players[0].aim.pitch = pitch_at(110);
+    w.step(&[fire()]);
+    assert_eq!(w.dummies[0].health, 75);
+}
+
+#[test]
+fn a_rifle_headshot_fells_a_straw_target_and_it_stands_again_full() {
+    let mut w = settled(Bot::Moves);
+    w.step(&[keys(crate::input::SLOT_4)]);
+    run(&mut w, Input::default(), crate::arms::RAISE as usize);
+    w.step(&[fire()]);
+    // 70 × 2 = 140, past its 100
+    assert_eq!(w.dummies[0].down, TARGET_DOWN);
+    run(&mut w, Input::default(), TARGET_DOWN as usize);
+    assert_eq!((w.dummies[0].down, w.dummies[0].health), (0, HEALTH));
+}
+
+#[test]
+fn a_block_between_stops_the_shot() {
+    let mut w = settled(Bot::Moves);
+    // behind the block at (10, −12), 2 m high, crouched low, aiming level
+    // north at the target at (14, −24) would pass; from (10, 0.3 below the
+    // block's top) the block is in the way of one at (10, −20)
+    w.dummies[0].feet = v3(int(10), 0, int(-20));
+    w.players[0].body.origin = v3(int(10), 0, int(-6));
+    w.players[0].aim.pitch = fx::wrap(fx::atan2(-(ONE * 65 / 100), int(14)));
+    w.step(&[fire()]);
+    assert_eq!(w.dummies[0].health, HEALTH);
+    assert_eq!(w.marks.len(), 1, "the shot marks the block");
+}
+
+#[test]
+fn the_shotgun_close_up_nearly_empties_a_target_and_throws_you_up_off_the_floor() {
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(8), 0, -ONE);
+    w.step(&[keys(crate::input::SLOT_2)]);
+    run(&mut w, Input::default(), crate::arms::RAISE as usize);
+    // 3 m from the target, aimed at its chest (1.15 m): the ring's pellets
+    // are 3 × tan 5° = 0.26 m out, inside the body's 0.32, so all eight meet
+    // it: at least 8 × 12 = 96
+    w.players[0].aim.pitch = fx::wrap(fx::atan2(-(ONE / 2), int(3)));
+    w.step(&[fire()]);
+    let d = &w.dummies[0];
+    assert!(d.down > 0 || d.health <= 4, "{} left", d.health);
+    // in the air, aimed straight down: up by the kick, 6 m/s
+    let mut w = settled(Bot::Moves);
+    w.step(&[keys(crate::input::SLOT_2)]);
+    run(&mut w, Input::default(), crate::arms::RAISE as usize);
+    w.players[0].body.origin.y = int(3);
+    w.players[0].body.on_ground = false;
+    w.players[0].body.velocity = V3::ZERO;
+    w.players[0].aim.pitch = crate::camera::PITCH_MIN;
+    w.step(&[fire()]);
+    // + 6 × sin 89° ≈ 6.0, less a tick's gravity (0.3)
+    let vy = w.players[0].body.velocity.y;
+    assert!(near(vy, ONE * 57 / 10, ONE / 10), "{}", fx::decimal(vy, 2));
+}
+
+#[test]
+fn in_a_duel_the_bot_shoots_the_player_and_in_the_practice_room_it_never_does() {
+    let mut duel = settled(Bot::Shoots);
+    let mut hurt = false;
+    for _ in 0..900 {
+        duel.step(&[Input::default()]);
+        hurt |= duel.players[0].health < HEALTH || !duel.players[0].alive();
+    }
+    assert!(hurt, "fifteen seconds in its sight");
+    let mut room = settled(Bot::Moves);
+    for _ in 0..900 {
+        room.step(&[Input::default()]);
+        assert_eq!(room.players[0].health, HEALTH);
+    }
+}
+
+#[test]
+fn a_player_who_goes_down_stands_again_at_the_spawn_full() {
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(20), 0, int(-10));
+    w.players[0].health = 0;
+    w.players[0].dead = RESPAWN;
+    run(&mut w, Input::default(), RESPAWN as usize);
+    let p = &w.players[0];
+    assert!(p.alive());
+    assert_eq!((p.health, p.body.origin), (HEALTH, w.map.spawns[0].0));
+}
+
+#[test]
+fn the_walls_keep_at_most_forty_eight_marks() {
+    let mut w = settled(Bot::Moves);
+    // straight up at the sky: nothing to mark; at the floor, a mark a shot
+    w.players[0].aim.pitch = crate::camera::PITCH_MIN;
+    w.step(&[keys(crate::input::SLOT_3)]);
+    run(&mut w, Input::default(), crate::arms::RAISE as usize);
+    // twelve shots a second: five seconds, sixty shots
+    for _ in 0..300 {
+        w.players[0].arms.rounds[2] = 30;
+        w.step(&[fire()]);
+    }
+    assert_eq!(w.marks.len(), MARKS_MOST);
+}
+
+#[test]
+fn the_same_records_with_shots_give_the_same_world() {
+    let script = |t: u64| Input {
+        keys: [FORWARD, FORWARD | JUMP, LEFT | JUMP, CROUCH][(t / 23 % 4) as usize],
+        buttons: if t % 7 < 2 { crate::input::FIRE } else { 0 },
+        dx: ((t * 37) % 400) as i32 - 200,
+        ..Input::default()
+    };
+    let play = || {
+        let mut w = World::room(Bot::Shoots);
+        for t in 0..900 {
+            w.step(&[script(t)]);
+        }
+        w
+    };
+    assert_eq!(play(), play());
+}
+
+#[test]
+fn every_skin_and_the_straw_target_stay_inside_the_hit_envelope() {
+    // CS-5: nothing of a body drawn outside what a shot meets: within the
+    // body's radius across, and no higher than the top of the head. Each
+    // skin is drawn standing and in stride, looking level, up and down,
+    // without its weapon (only the held weapon may reach out)
+    use crate::render::Pass;
+    use crate::skins::{draw, Figure, SKINS};
+    use crate::weapons::{BODY_R, HEAD_R};
+    let look = crate::look::Look::parse(include_str!("../../../../data/look.json")).unwrap();
+    let top = ONE * 165 / 100 + HEAD_R;
+    let table = crate::prim::MeshTable::default();
+    let check = |shapes: &crate::render::Shapes, what: &str| -> Fx {
+        let mut widest = 0;
+        for sh in shapes.list.iter().filter(|s| s.pass == Pass::Solid) {
+            let v = table.vertices(sh.mesh);
+            for p in v.chunks(crate::prim::VERTEX_VALUES) {
+                let at = sh.at.apply(v3(p[0], p[1], p[2]));
+                widest = widest.max(at.len_xz());
+                assert!(
+                    at.len_xz() <= BODY_R,
+                    "{what}: a part reaches {} out",
+                    fx::decimal(at.len_xz(), 3)
+                );
+                assert!(at.y <= top, "{what}: a part reaches {} up", fx::decimal(at.y, 3));
+            }
+        }
+        widest
+    };
+    for skin in SKINS {
+        for pitch in [0, crate::camera::PITCH_MAX, crate::camera::PITCH_MIN] {
+            // 7 ticks is the stride's widest: sin(7 × 13°) ≈ 1
+            for (moment, ground) in [(0, true), (ONE * 7, true), (ONE * 21, true), (0, false)] {
+                let mut shapes = crate::render::Shapes::default();
+                let f = Figure {
+                    skin,
+                    feet: V3::ZERO,
+                    yaw: 0,
+                    pitch,
+                    ducked: false,
+                    flashed: false,
+                    speed: TUNING.run,
+                    on_ground: ground,
+                    moment,
+                    arms: None,
+                    sliding: false,
+                    hanging: false,
+                    lifelike: false,
+                    frame: crate::gravity::Turn::IDENTITY,
+                };
+                draw(&mut shapes, &f, &look);
+                let widest = check(&shapes, &format!("{skin:?} pitch {pitch} at {moment}"));
+                // and each fills most of it, so it reads as wide as it is hit
+                // (R6.2): at least 0.36 m out
+                assert!(
+                    widest >= ONE * 36 / 100,
+                    "{skin:?} reaches only {}",
+                    fx::decimal(widest, 3)
+                );
+            }
+        }
+    }
+    let mut shapes = crate::render::Shapes::default();
+    let dummy = Dummy {
+        feet: V3::ZERO,
+        health: HEALTH,
+        down: 0,
+        flash: 0,
+        tall: DUMMY_TALL,
+        kind: 0,
+    };
+    draw_dummy(&mut shapes, &dummy, &look.palette, look.ink());
+    check(&shapes, "straw target");
+}
+
+// ---- M3: projectiles, bursts and melee -------------------------------------
+
+/// A bare floor 400 m across with walls across the way north and south at
+/// `-north` and `south` metres (0 for none), 20 m high, and the player alone
+/// at the origin facing north (heading 0, −z), settled.
+fn bare(north: i32, south: i32) -> World {
+    use crate::map::{block, Map, Surface};
+    let mut w = World::practice();
+    let mut brushes = vec![block(
+        v3(-int(200), -ONE, -int(200)),
+        v3(int(200), 0, int(200)),
+        Surface::Floor,
+    )];
+    if north > 0 {
+        brushes.push(block(
+            v3(-int(200), 0, -int(north) - ONE),
+            v3(int(200), int(20), -int(north)),
+            Surface::Wall,
+        ));
+    }
+    if south > 0 {
+        brushes.push(block(
+            v3(-int(200), 0, int(south)),
+            v3(int(200), int(20), int(south) + ONE),
+            Surface::Wall,
+        ));
+    }
+    w.map = Rc::new(Map {
+        brushes,
+        spawns: vec![(V3::ZERO, 0)],
+        ..crate::map::Map::default()
+    });
+    w.players.truncate(1);
+    w.dummies.clear();
+    w.players[0] = Player::at((V3::ZERO, 0));
+    run(&mut w, Input::default(), 10);
+    w
+}
+
+/// The player holding `g`, raised and ready.
+fn holding(w: &mut World, g: Weapon) {
+    w.players[0].arms.weapon = g;
+    w.players[0].arms.raise = 0;
+}
+
+fn alt() -> Input {
+    Input {
+        buttons: crate::input::ALT,
+        ..Input::default()
+    }
+}
+
+#[test]
+fn a_toro_rocket_takes_about_a_second_to_cross_twenty_metres_and_fells_a_straw_target() {
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Toro);
+    w.players[0].aim.pitch = pitch_at(110);
+    w.step(&[fire()]);
+    assert_eq!(w.flying.len(), 1);
+    // from the muzzle, 0.7 m ahead of the eye, to the target's front, 20 −
+    // 0.48 − the rocket's 0.15: 18.67 m at a third of a metre a tick, so
+    // the 57th tick's move (counting the firing tick's) reaches it
+    run(&mut w, Input::default(), 55);
+    assert_eq!(w.dummies[0].health, HEALTH, "still in the air");
+    run(&mut w, Input::default(), 4);
+    assert_eq!(
+        w.dummies[0].down,
+        TARGET_DOWN - 3,
+        "100 direct, felled three ticks ago"
+    );
+    assert!(w.flying.is_empty());
+    assert_eq!(w.bursts.len(), 1);
+}
+
+#[test]
+fn a_toro_rocket_at_your_feet_throws_you_higher_than_a_jump_and_costs_thirty_percent() {
+    let mut w = bare(0, 0);
+    holding(&mut w, Weapon::Toro);
+    w.players[0].aim.pitch = crate::camera::PITCH_MIN;
+    w.step(&[fire()]);
+    let mut top = 0;
+    for _ in 0..90 {
+        w.step(&[Input::default()]);
+        top = top.max(w.players[0].body.origin.y);
+    }
+    // the burst is within a body's radius of the feet: its edge is 0 away,
+    // so 70 × 30% = 21, and the whole 10 m/s push, nearly straight up:
+    // about 9.7 m/s, a rise of 9.7² / 36 = 2.6 m; a jump rises 7.92² / 36
+    // = 1.74
+    assert_eq!(w.players[0].health, HEALTH - 21);
+    assert!(top > ONE * 23 / 10, "rose {}", fx::decimal(top, 2));
+}
+
+#[test]
+fn a_drum_grenade_bounces_along_the_floor_and_bursts_at_its_fuse() {
+    let mut w = bare(0, 0);
+    holding(&mut w, Weapon::Drum);
+    w.step(&[fire()]);
+    let start = w.flying[0].bounces;
+    let mut low = int(10);
+    // its fuse is 90 ticks, the firing tick the first
+    for _ in 0..88 {
+        w.step(&[Input::default()]);
+        if let Some(q) = w.flying.first() {
+            low = low.min(q.at.y);
+        }
+    }
+    let q = w.flying[0];
+    assert!(q.bounces < start, "it has bounced");
+    assert!(low >= 0, "never below the floor: {}", fx::decimal(low, 3));
+    assert!(w.bursts.is_empty());
+    w.step(&[Input::default()]);
+    assert!(w.flying.is_empty());
+    assert_eq!(w.bursts.len(), 1);
+}
+
+#[test]
+fn a_collage_shot_bounces_off_one_wall_and_stops_at_the_next() {
+    // walls 10 m north and 10 m south; level from the eye, north: 9.3 m to
+    // the first, back 20 m to the second, 29 m at 40 m/s, 44 ticks
+    let mut w = bare(10, 10);
+    holding(&mut w, Weapon::Collage);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 20);
+    let q = w.flying[0];
+    assert!(q.velocity.z > 0 && q.bounces == 0, "turned back south");
+    assert_eq!(q.velocity.len(), int(40), "keeping all its speed");
+    run(&mut w, Input::default(), 30);
+    assert!(w.flying.is_empty());
+    assert_eq!(w.marks.len(), 1, "it marks the second wall");
+}
+
+#[test]
+fn a_trabuco_nail_pins_a_body_with_a_wall_close_behind_it() {
+    let pinned_after = |wall: i32, at: Fx| {
+        let mut w = bare(wall, 0);
+        let mut other = Player::at((v3(0, 0, -at), 0));
+        other.pilot = None;
+        w.players.push(other);
+        run(&mut w, Input::default(), 5);
+        holding(&mut w, Weapon::Trabuco);
+        // level at the chest
+        w.players[0].aim.pitch = fx::wrap(fx::atan2(-(ONE / 2), at));
+        w.step(&[fire(), Input::default()]);
+        run2(&mut w, 15);
+        (w.players[1].pinned, w.players[1].health)
+    };
+    // 9.2 m off with a wall at 10: its back 0.32 m from the wall, its front
+    // 1.28 m, inside the 1.5
+    let (pinned, health) = pinned_after(10, ONE * 92 / 10);
+    assert!(pinned > 0, "pinned");
+    assert!(health < HEALTH && (HEALTH - health) % 15 == 0, "{health}");
+    // the same with the wall 6 m further back: hit, not pinned
+    let (pinned, health) = pinned_after(16, ONE * 92 / 10);
+    assert_eq!(pinned, 0);
+    assert!(health < HEALTH);
+}
+
+fn run2(w: &mut World, ticks: usize) {
+    for _ in 0..ticks {
+        w.step(&[Input::default(), Input::default()]);
+    }
+}
+
+#[test]
+fn a_katana_swing_hits_a_straw_target_within_reach_once_and_misses_one_beyond() {
+    let swing_from = |z_hundredths: i32| {
+        let mut w = settled(Bot::Moves);
+        w.players[0].body.origin = v3(int(8), 0, z_hundredths * ONE / 100);
+        holding(&mut w, Weapon::Katana);
+        w.step(&[fire()]);
+        run(&mut w, Input::default(), 12);
+        w.dummies[0].health
+    };
+    // the target at z = −4: from −1.2, its edge 2.32 m off, within the 2.4
+    // (T30); one swing, 50, however many of its active ticks it is in the arc
+    assert_eq!(swing_from(-120), 50);
+    // from −1, 2.52 m: out of reach
+    assert_eq!(swing_from(-100), HEALTH);
+}
+
+/// T23 (CS-Q27: A): the view's turn as the button goes down picks the cut:
+/// 10 px a tick is 1.2°, so six ticks of it are past the 3° a flick needs.
+/// Held still, the katana cuts level, each the other way from the last; a
+/// knife held still thrusts.
+#[test]
+fn the_views_turn_as_you_swing_picks_the_cut_and_held_still_a_katana_cuts_each_way_in_turn() {
+    use crate::weapons::{CUT_CHOP, CUT_LEFT, CUT_RIGHT};
+    let cut_after = |g: Weapon, dx: i32, dy: i32| {
+        let mut w = settled(Bot::Moves);
+        holding(&mut w, g);
+        let turn = Input {
+            dx,
+            dy,
+            ..Input::default()
+        };
+        run(&mut w, turn, 5);
+        w.step(&[Input {
+            buttons: crate::input::FIRE,
+            ..turn
+        }]);
+        w.players[0].swing.and_then(|s| s.cut)
+    };
+    assert_eq!(
+        cut_after(Weapon::Katana, 1000, 0),
+        Some(CUT_RIGHT),
+        "turning right"
+    );
+    assert_eq!(cut_after(Weapon::Katana, -1000, 0), Some(CUT_LEFT));
+    assert_eq!(
+        cut_after(Weapon::Katana, 0, 1000),
+        Some(CUT_CHOP),
+        "the mouse down"
+    );
+    assert_eq!(
+        cut_after(Weapon::Navaja, 1000, 0),
+        Some(CUT_RIGHT),
+        "a knife cuts too"
+    );
+    assert_eq!(cut_after(Weapon::Navaja, 0, 0), None, "and still, thrusts");
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Katana);
+    let mut cuts = Vec::new();
+    for _ in 0..3 {
+        w.step(&[fire()]);
+        cuts.push(w.players[0].swing.and_then(|s| s.cut));
+        run(&mut w, Input::default(), Weapon::Katana.stats().interval as usize);
+    }
+    assert_eq!(cuts, [Some(CUT_LEFT), Some(CUT_RIGHT), Some(CUT_LEFT)]);
+}
+
+/// T23 (CS-Q28: A): a cut meets what its arc passes. The straw target at
+/// (8, −4), 1.8 m off and 40° to the right of the aim: a level cut meets
+/// it; a chop, whose plane runs straight down the aim, passes it by.
+#[test]
+fn a_chop_passes_by_a_target_to_the_side_that_a_level_cut_meets() {
+    let cut_with = |dx: i32, dy: i32| {
+        let mut w = settled(Bot::Moves);
+        let (s, c) = (fx::sin(fx::deg(40)), fx::cos(fx::deg(40)));
+        let d = int(18) / 10;
+        // stand so the target lies 40° right of north (−z), 1.8 m off
+        w.players[0].body.origin = v3(int(8) - fx::mul(d, s), 0, -int(4) + fx::mul(d, c));
+        w.players[0].aim.yaw = 0;
+        holding(&mut w, Weapon::Katana);
+        // the flick is set as the last ticks' turn would leave it
+        w.players[0].flick = (dx, dy);
+        w.step(&[fire()]);
+        run(&mut w, Input::default(), 12);
+        w.dummies[0].health
+    };
+    assert_eq!(cut_with(fx::deg(6), 0), HEALTH - 50, "a level cut");
+    assert_eq!(cut_with(0, -fx::deg(6)), HEALTH, "a chop");
+}
+
+/// T23: a cut is drawn wound back before its strike, through it, carried
+/// past its end, and back at rest as the swing ends; nothing is hit after
+/// the strike.
+#[test]
+fn a_cut_is_drawn_wound_struck_followed_through_and_back_at_rest() {
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Katana);
+    w.step(&[fire()]);
+    let sw = Weapon::Katana.swing().unwrap();
+    let mut seen = Vec::new();
+    while let Some(s) = w.players[0].swing {
+        let p = crate::hands::pose(&w.players[0].arms, Some(s), 0, true, 0);
+        seen.push((s.age, p.cut.expect("a cut").1));
+        w.step(&[Input::default()]);
+    }
+    let at = |age: i32| seen.iter().find(|x| x.0 == age).map(|x| x.1).unwrap();
+    assert!(at(sw.from) < -sw.half_arc, "wound back past the start");
+    assert!(
+        at(sw.until) >= sw.half_arc.min(crate::hands::DRAWN_ARC) - fx::deg(1),
+        "through to the end"
+    );
+    assert!(
+        at(sw.until + crate::weapons::FOLLOW_TICKS) > at(sw.until),
+        "and past it"
+    );
+    let last = seen.last().unwrap();
+    assert_eq!(
+        last.0,
+        sw.until + crate::weapons::FOLLOW_TICKS + crate::weapons::RECOVER_TICKS - 1
+    );
+    assert!(last.1.abs() < fx::deg(5), "near rest: {}", last.1);
+}
+
+#[test]
+fn a_navaja_from_behind_fells_a_straw_target_and_from_the_front_takes_thirty_five() {
+    // the target at (8, −4) faces the spawn, +z
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(8), 0, -(ONE * 53 / 10));
+    w.players[0].aim.yaw = fx::HALF_TURN;
+    holding(&mut w, Weapon::Navaja);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 8);
+    assert!(w.dummies[0].down > 0, "150 from behind");
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(8), 0, -(ONE * 27 / 10));
+    holding(&mut w, Weapon::Navaja);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 8);
+    assert_eq!(w.dummies[0].health, HEALTH - 35);
+}
+
+#[test]
+fn the_navaja_held_runs_ten_percent_faster_and_the_katana_allows_a_fourth_wall_jump() {
+    let mut w = World::practice();
+    holding(&mut w, Weapon::Navaja);
+    run(&mut w, keys(FORWARD), 90);
+    // 9 × 1.1 = 9.9
+    let s = w.players[0].body.speed();
+    assert!(near(s, ONE * 99 / 10, ONE / 20), "{}", fx::decimal(s, 3));
+    holding(&mut w, Weapon::Katana);
+    assert_eq!(w.players[0].tuning().wall_jumps, 4);
+    holding(&mut w, Weapon::Pistol);
+    assert_eq!(w.players[0].tuning().wall_jumps, 3);
+}
+
+#[test]
+fn the_punal_held_jumps_more_than_twice_as_high_as_the_navaja() {
+    // T16: 7.92 × 1.5 = 11.88 m/s up; 11.88² / (2 × 18) = 3.92 m, against
+    // the navaja's 7.92² / 36 = 1.74 m
+    let top = |g: Weapon| {
+        let mut w = World::practice();
+        run(&mut w, Input::default(), 30);
+        holding(&mut w, g);
+        let floor = w.players[0].body.origin.y;
+        w.step(&[keys(JUMP)]);
+        let mut top = floor;
+        for _ in 0..90 {
+            w.step(&[Input::default()]);
+            top = top.max(w.players[0].body.origin.y);
+        }
+        top - floor
+    };
+    let (navaja, punal) = (top(Weapon::Navaja), top(Weapon::Punal));
+    assert!(
+        near(navaja, ONE * 174 / 100, ONE / 10),
+        "{}",
+        fx::decimal(navaja, 3)
+    );
+    assert!(
+        near(punal, ONE * 392 / 100, ONE / 10),
+        "{}",
+        fx::decimal(punal, 3)
+    );
+}
+
+#[test]
+fn on_the_alcazar_the_punal_jumps_onto_the_rampart_and_the_navaja_does_not() {
+    // T16: the rampart stands 3.5 m, under the puñal's 3.92 and over a
+    // jump's 1.74. From 3 m off its face, running at it, one jump
+    let after = |g: Weapon| {
+        let mut w = World::practice();
+        w.map = Rc::new(crate::maps::alcazar());
+        w.players.truncate(1);
+        w.dummies.clear();
+        let start = v3(0, 0, -int(22));
+        w.players[0].body.origin = start;
+        w.players[0].prev = start;
+        w.players[0].aim.yaw = 0;
+        holding(&mut w, g);
+        run(&mut w, keys(FORWARD), 30);
+        w.players[0].body.origin = start;
+        w.step(&[keys(FORWARD | JUMP)]);
+        run(&mut w, keys(FORWARD), 90);
+        w.players[0].body.origin
+    };
+    let up = after(Weapon::Punal);
+    assert!(
+        near(up.y, crate::maps::RAMPART, ONE / 50),
+        "{}",
+        fx::decimal(up.y, 3)
+    );
+    assert!(up.z < -int(25), "on the walk, {}", fx::decimal(up.z, 3));
+    let down = after(Weapon::Navaja);
+    assert!(near(down.y, 0, ONE / 50), "{}", fx::decimal(down.y, 3));
+}
+
+/// A rocket from seat 1, 2.5 m in front of the player's eye at the spawn,
+/// flying at them at 20 m/s.
+fn rocket_at_the_player(w: &mut World) {
+    let eye = w.players[0].eye_now();
+    let at = eye.add(v3(0, 0, -(ONE * 25 / 10)));
+    w.flying.push(Projectile {
+        weapon: Weapon::Toro,
+        owner: 1,
+        at,
+        prev: at,
+        velocity: v3(0, 0, int(20)),
+        age: 0,
+        bounces: 0,
+        band: 0,
+        scored: false,
+        up: V3::UP,
+    });
+}
+
+#[test]
+fn a_katana_swing_in_time_turns_a_rocket_back_and_it_fells_the_target_behind() {
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Katana);
+    w.players[0].aim.pitch = pitch_at(110);
+    rocket_at_the_player(&mut w);
+    // and one 2.5 m behind the player, flying away: out of the arc
+    let mut behind = w.flying[0];
+    behind.at = behind.at.add(v3(0, 0, int(5)));
+    w.flying.push(behind);
+    w.step(&[fire()]);
+    assert_eq!(w.flying[1].owner, 1, "the one behind is not turned");
+    let q = w.flying[0];
+    assert_eq!(q.owner, 0, "the parrier's now");
+    assert!(q.velocity.z < 0, "flying north, the way the player faces");
+    // north 20 m at 20 m/s to the straw target at (8, −4)
+    run(&mut w, Input::default(), 70);
+    assert_eq!(w.players[0].health, HEALTH);
+    assert!(w.dummies[0].down > 0, "100 direct");
+}
+
+#[test]
+fn a_katana_swing_after_its_six_parry_ticks_does_not_turn_a_rocket() {
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Katana);
+    w.step(&[fire()]);
+    // the swing's age is 1 after its tick; six more and it is past the parry
+    run(&mut w, Input::default(), crate::weapons::PARRY as usize);
+    rocket_at_the_player(&mut w);
+    run(&mut w, Input::default(), 10);
+    assert!(!w.players[0].alive(), "100 direct");
+}
+
+#[test]
+fn a_katana_lunge_flings_you_about_seven_metres_before_you_land() {
+    let mut w = bare(0, 0);
+    holding(&mut w, Weapon::Katana);
+    w.step(&[alt()]);
+    assert!(!w.players[0].body.on_ground);
+    let mut ticks = 0;
+    while !w.players[0].body.on_ground && ticks < 120 {
+        w.step(&[Input::default()]);
+        ticks += 1;
+    }
+    // 4 m/s up under 18 m/s²: 0.44 s; at 16 m/s, 7.1 m
+    let z = -w.players[0].body.origin.z;
+    assert!(z > ONE * 66 / 10 && z < ONE * 76 / 10, "{}", fx::decimal(z, 2));
+}
+
+#[test]
+fn the_guadana_hook_pulls_you_to_a_wall_in_reach_while_held_and_lets_go_when_released() {
+    let mut w = bare(10, 0);
+    holding(&mut w, Weapon::Guadana);
+    w.players[0].aim.pitch = fx::deg(20);
+    w.step(&[alt()]);
+    assert!(w.players[0].hook.is_some());
+    // lifted off the floor as it catches
+    assert_eq!(w.players[0].body.velocity.y, crate::weapons::HOOK_LIFT);
+    run(&mut w, alt(), 30);
+    let b = w.players[0].body;
+    // the hook holds 10 × tan 20° = 3.64 m above the eye, at y 5.29; the
+    // line from the body's middle (0.9) rises at about 24°, so 40 m/s² of
+    // pull is about 16 up. With the line bearing the body's weight, half a
+    // second from 4 m/s up rises 4 × 0.5 + 16 × 0.5² / 2 = 4 m (less as the
+    // angle changes); without it, 16 − 18 = −2 m/s², 1.75 m; without the
+    // lift, 2 m
+    assert!(b.origin.z < -ONE && b.origin.y > ONE * 25 / 10, "{:?}", b.origin);
+    w.step(&[Input::default()]);
+    assert!(w.players[0].hook.is_none());
+    // a wall 20 m off is past the 12 m reach
+    let mut w = bare(20, 0);
+    holding(&mut w, Weapon::Guadana);
+    w.players[0].aim.pitch = fx::deg(20);
+    w.step(&[alt()]);
+    assert!(w.players[0].hook.is_none());
+}
+
+#[test]
+fn a_campana_at_your_feet_costs_you_thirty_percent_and_its_toll_pushes_a_player_beside_you_away() {
+    let mut w = bare(0, 0);
+    let mut other = Player::at((v3(int(3), 0, 0), 0));
+    other.pilot = None;
+    w.players.push(other);
+    run2(&mut w, 5);
+    holding(&mut w, Weapon::Campana);
+    w.players[0].aim.pitch = crate::camera::PITCH_MIN;
+    w.step(&[fire(), Input::default()]);
+    run2(&mut w, 10);
+    // within 1 m of your own burst: 120 × 30% = 36
+    assert_eq!(w.players[0].health, HEALTH - 36);
+    let o = &w.players[1];
+    assert!(o.health < HEALTH, "hurt");
+    assert!(o.body.origin.x > int(3), "pushed away, east");
+}
+
+#[test]
+fn the_same_records_with_projectiles_and_swings_give_the_same_world() {
+    use crate::input::{MELEE, SLOT_10, SLOT_6, SLOT_7, SLOT_8, SLOT_9};
+    let slots = [SLOT_6, SLOT_7, SLOT_8, SLOT_9, SLOT_10, MELEE];
+    let script = |t: u64| Input {
+        keys: [FORWARD, FORWARD | JUMP, LEFT | JUMP, CROUCH][(t / 23 % 4) as usize]
+            | if t.is_multiple_of(50) {
+                slots[(t / 50 % 6) as usize]
+            } else {
+                0
+            },
+        buttons: if t % 7 < 2 { crate::input::FIRE } else { 0 }
+            | if t.is_multiple_of(31) {
+                crate::input::ALT
+            } else {
+                0
+            },
+        dx: ((t * 37) % 400) as i32 - 200,
+        ..Input::default()
+    };
+    let play = || {
+        let mut w = World::room(Bot::Shoots);
+        for t in 0..900 {
+            w.step(&[script(t)]);
+        }
+        w
+    };
+    assert_eq!(play(), play());
+}
+
+#[test]
+fn a_drum_grenade_that_meets_a_body_takes_its_ninety_and_not_its_burst_as_well() {
+    // the target 5 m in front: level from the eye at 24 m/s, the grenade
+    // falls 9 × 0.2² = 0.36 m on the way and meets the body at 1.3 m
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(8), 0, ONE);
+    holding(&mut w, Weapon::Drum);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 20);
+    assert_eq!(w.dummies[0].health, HEALTH - 90);
+}
+
+// ---- CS-Q22: shooting by speed ---------------------------------------------
+
+#[test]
+fn a_shot_is_counted_in_the_band_of_how_fast_you_were_going_and_a_hit_with_it() {
+    // standing, a pistol at the straw head 20 m off: band 0, a hit
+    let mut w = settled(Bot::Moves);
+    w.step(&[fire()]);
+    let sh = w.players[0].shooting;
+    assert_eq!((sh.fired, sh.hit), ([1, 0, 0, 0], [1, 0, 0, 0]));
+    // at 9 m/s in the air (band 2; on the ground, friction would take
+    // 0.9 m/s off before the shot, leaving band 1), aimed at the sky: a miss
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin.y = int(3);
+    w.players[0].body.on_ground = false;
+    w.players[0].body.velocity = v3(0, 0, -int(9));
+    w.players[0].aim.pitch = crate::camera::PITCH_MAX;
+    w.step(&[fire()]);
+    let sh = w.players[0].shooting;
+    assert_eq!((sh.fired, sh.hit), ([0, 0, 1, 0], [0, 0, 0, 0]));
+}
+
+#[test]
+fn within_half_a_second_of_a_slide_a_shot_is_the_fourth_band_whatever_the_speed() {
+    let mut p = Player::at((V3::ZERO, 0));
+    assert_eq!(p.band(), 0);
+    p.body.velocity = v3(int(5), 0, 0);
+    assert_eq!(p.band(), 1);
+    p.since_trick = BAND_TRICK_TICKS - 1;
+    assert_eq!(p.band(), 3);
+    p.since_trick = BAND_TRICK_TICKS;
+    assert_eq!(p.band(), 1);
+}
+
+#[test]
+fn a_rockets_hit_counts_in_the_band_it_was_fired_from() {
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Toro);
+    w.players[0].aim.pitch = pitch_at(110);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 70);
+    let sh = w.players[0].shooting;
+    assert_eq!(
+        (sh.fired[0], sh.hit[0]),
+        (1, 1),
+        "fired standing, felled the target"
+    );
+}
+
+#[test]
+fn a_headshot_leaves_an_x_on_the_head_for_the_shooter_and_the_kick_never_moves_the_aim() {
+    let mut w = settled(Bot::Moves);
+    let pitch = w.players[0].aim.pitch;
+    w.step(&[fire()]);
+    // level from the eye at the straw head 20 m off (see the pistol test)
+    assert_eq!(w.head_marks.len(), 1);
+    let m = w.head_marks[0];
+    assert_eq!((m.by, m.at), (0, v3(int(8), ONE * 165 / 100, -int(4))));
+    assert_eq!(w.players[0].aim.pitch, pitch, "the kick is drawn only");
+    run(&mut w, Input::default(), HEAD_MARK as usize);
+    assert!(w.head_marks.is_empty());
+    // a body shot leaves none
+    let mut w = settled(Bot::Moves);
+    w.players[0].aim.pitch = pitch_at(110);
+    w.step(&[fire()]);
+    assert!(w.head_marks.is_empty());
+}
+
+// ---- M5: rounds, pickups --------------------------------------------------
+
+/// A match of one person (seat 1) and three bots, every seat in its skin.
+fn a_match() -> World {
+    World::online(0b1, 0, [0, 1, 2, 3], 0)
+}
+
+#[test]
+fn a_match_starts_on_the_plaza_with_everyone_at_a_spawn_holding_the_pistol_and_navaja() {
+    let w = a_match();
+    let r = w.rounds.expect("a match has rounds");
+    assert_eq!(
+        (w.map.name, r.round, r.phase),
+        ("map_plaza", 1, crate::rounds::Phase::Count)
+    );
+    for (s, p) in w.players.iter().enumerate() {
+        assert_eq!(p.body.origin, w.map.spawns[s].0);
+        assert_eq!(p.arms.owned, crate::arms::ROUND_OWNED);
+        assert_eq!(p.skin, s as u8);
+    }
+    assert!(w.dummies.is_empty(), "no straw targets in a match");
+    assert_eq!(w.pickups.len(), w.map.pickups.len());
+}
+
+#[test]
+fn during_the_count_nobody_moves_and_after_it_they_do() {
+    let mut w = a_match();
+    let start = w.players[0].body.origin;
+    for _ in 0..crate::rounds::COUNT_TICKS - 1 {
+        w.step(&[keys(FORWARD)]);
+    }
+    // (across the floor: the body settles a millimetre onto it)
+    let moved = |w: &World| w.players[0].body.origin.sub(start).len_xz();
+    assert_eq!(moved(&w), 0, "held during the count");
+    for _ in 0..30 {
+        w.step(&[keys(FORWARD)]);
+    }
+    assert!(moved(&w) > ONE);
+}
+
+#[test]
+fn the_last_seat_standing_takes_the_round_and_the_next_is_on_the_next_map() {
+    let mut w = a_match();
+    run(&mut w, Input::default(), crate::rounds::COUNT_TICKS as usize);
+    // seats 2 to 4 fall
+    for k in 1..4 {
+        w.players[k].health = 0;
+        w.players[k].dead = DOWN_FOR_ROUND;
+    }
+    w.step(&[Input::default()]);
+    let r = w.rounds.unwrap();
+    assert_eq!(
+        (r.phase, r.winner, r.scores),
+        (crate::rounds::Phase::Over, Some(0), [1, 0, 0, 0])
+    );
+    // they stay down through the four seconds, then all stand on the
+    // Catedral's spawns with the pistol and navaja again
+    run(&mut w, Input::default(), crate::rounds::OVER_TICKS as usize - 1);
+    assert!(!w.players[1].alive(), "down until the next round");
+    w.step(&[Input::default()]);
+    assert_eq!(w.map.name, "map_catedral");
+    for (s, p) in w.players.iter().enumerate() {
+        assert!(p.alive());
+        assert_eq!(p.body.origin, w.map.spawns[s].0);
+        assert_eq!(p.arms.owned, crate::arms::ROUND_OWNED);
+    }
+    assert_eq!(w.rounds.unwrap().round, 2);
+}
+
+#[test]
+fn a_felled_player_watches_the_next_seat_still_standing() {
+    let mut w = a_match();
+    w.players[0].dead = DOWN_FOR_ROUND;
+    w.players[1].dead = DOWN_FOR_ROUND;
+    assert_eq!(w.watching(0), 2);
+    w.players[2].dead = DOWN_FOR_ROUND;
+    assert_eq!(w.watching(0), 3);
+}
+
+#[test]
+fn walking_over_a_weapon_takes_it_into_your_hands_full_and_it_is_gone_for_the_round() {
+    let mut w = a_match();
+    run(&mut w, Input::default(), crate::rounds::COUNT_TICKS as usize);
+    // the shotgun lies 7 m out at 45°; stand the player on it
+    let k = w
+        .pickups
+        .iter()
+        .position(|k| k.weapon == Weapon::Shotgun)
+        .unwrap();
+    w.players[0].body.origin = w.pickups[k].at;
+    w.step(&[Input::default()]);
+    let p = &w.players[0];
+    assert_eq!(p.arms.weapon, Weapon::Shotgun);
+    assert!(p.arms.owns(Weapon::Shotgun));
+    assert!(w.pickups[k].taken);
+}
+
+#[test]
+fn in_a_match_the_bots_fight_each_other_too() {
+    // four bots and nobody else: within a minute of play someone is hurt
+    let mut w = World::online(0, 0, [0, 1, 2, 3], 0);
+    let mut hurt = false;
+    for _ in 0..3600 {
+        w.step(&[]);
+        hurt |= w.players.iter().any(|p| p.health < HEALTH);
+    }
+    assert!(hurt);
+}
+
+#[test]
+fn a_burst_is_painted_out_to_the_reach_it_hurts_and_no_further() {
+    // R7.9: what a blast is seen to reach is what it reaches: its paint
+    // ends at its radius (its ink a hair past) and is thrown out to most of
+    // it
+    use crate::render::Pass;
+    let look = crate::look::Look::parse(include_str!("../../../../data/look.json")).unwrap();
+    let table = crate::prim::MeshTable::default();
+    let b = Burst {
+        at: v3(fx::int(3), fx::int(2), fx::int(-4)),
+        radius: fx::int(4),
+        ticks: BURST,
+    };
+    let mut furthest = 0;
+    for ticks in (1..=BURST).rev() {
+        let mut shapes = crate::render::Shapes::default();
+        draw_burst(&mut shapes, &Burst { ticks, ..b }, &look.palette, look.ink());
+        let painted: Vec<_> = shapes.list.iter().filter(|s| s.pass != Pass::Glow).collect();
+        assert_eq!(painted.len(), 2 * SPLATS.len(), "each splat filled and inked");
+        for sh in painted {
+            for p in table.vertices(sh.mesh).chunks(crate::prim::VERTEX_VALUES) {
+                let d = sh.at.apply(v3(p[0], p[1], p[2])).sub(b.at).len();
+                let margin = if sh.pass == Pass::Ink { ONE * 3 / 100 } else { 0 };
+                assert!(
+                    d <= b.radius + margin,
+                    "at {ticks} ticks a splat reaches {}",
+                    fx::decimal(d, 3)
+                );
+                if sh.pass == Pass::Dither {
+                    furthest = furthest.max(d);
+                }
+            }
+        }
+    }
+    assert!(
+        furthest >= b.radius * 9 / 10,
+        "thrown only {}",
+        fx::decimal(furthest, 3)
+    );
+}
+
+#[test]
+fn every_thrown_weapon_flies_drawn_in_ink() {
+    use crate::render::Pass;
+    let look = crate::look::Look::parse(include_str!("../../../../data/look.json")).unwrap();
+    for weapon in [
+        Weapon::Drum,
+        Weapon::Trabuco,
+        Weapon::Toro,
+        Weapon::Campana,
+        Weapon::Collage,
+    ] {
+        let q = Projectile {
+            weapon,
+            owner: 0,
+            at: v3(0, ONE, 0),
+            prev: v3(0, ONE, ONE / 10),
+            velocity: v3(0, 0, -fx::int(20)),
+            age: 0,
+            bounces: 0,
+            band: 0,
+            scored: false,
+            up: V3::UP,
+        };
+        let mut shapes = crate::render::Shapes::default();
+        draw_projectile(&mut shapes, &q, ONE, &look.palette, look.ink());
+        assert!(
+            shapes.list.iter().filter(|s| s.pass == Pass::Ink).count() >= 2,
+            "{weapon:?} is not inked"
+        );
+    }
+}
+
+#[test]
+fn a_hit_from_the_bot_shakes_the_view_points_to_it_and_leaves_the_aim_alone() {
+    let mut w = settled(Bot::Moves);
+    let (aim, bot_eye) = (w.players[0].aim, w.players[1].eye_now());
+    let still = w.camera(0, 0, Mouse::default(), ONE, true);
+    w.hurt(1, 0, 30);
+    let h = w.players[0].hurt;
+    assert_eq!((w.players[0].health, h.trail, h.from), (70, 100, Some(bot_eye)));
+    w.step(&[Input::default()]);
+    assert_eq!(w.players[0].aim, aim, "the aim a tick reads never shakes");
+    let shaken = w.camera(0, 0, Mouse::default(), ONE, true);
+    assert_ne!(shaken.fwd, still.fwd, "the view shakes");
+    assert_eq!(
+        w.camera(0, 0, Mouse::default(), ONE, false).fwd,
+        still.fwd,
+        "and not with the setting off"
+    );
+    // your own blast shakes you with no shooter to point to
+    w.hurt(0, 0, 10);
+    assert_eq!(w.players[0].hurt.from, None);
+}
+
+/// T19: on every map, a round of four bots, and a round of three bots with
+/// a person who stands still, is decided inside a minute (since the bots
+/// were eased after T21, inside 90 s: the slowest took 84; the limit is 150). Before, bots
+/// pressed into walls on the maps with corridors and rounds ran to the
+/// limit. Each is tried from three ticks, which turn the bots' aim and
+/// circling differently.
+#[test]
+fn on_every_map_a_round_with_bots_is_decided_inside_a_minute() {
+    // T20: at every skill; a bot that falls back must still come again
+    let mut slow = Vec::new();
+    for (map, skill) in (0..crate::maps::COUNT).flat_map(|m| crate::pilot::SKILLS.map(|s| (m, s))) {
+        for (person, from) in [(0, 0), (0, 37), (0, 101), (1, 0), (1, 37), (1, 101)] {
+            let mut w = World::online(person, 0, [0, 1, 2, 3], 0);
+            w.skill = skill;
+            w.tick = from;
+            w.start_round(map);
+            let mut ended = None;
+            for t in 0..crate::rounds::COUNT_TICKS + 90 * 60 {
+                w.step(&vec![Input::default(); person as usize]);
+                if w.rounds.unwrap().phase == crate::rounds::Phase::Over {
+                    ended = Some(t);
+                    break;
+                }
+            }
+            if ended.is_none() {
+                slow.push((w.map.name, skill, person, from));
+            }
+        }
+    }
+    assert!(slow.is_empty(), "undecided after 90 s: {slow:?}");
+}
+
+/// T19: a lone bot finds a person standing still at their spawn and fells
+/// them inside a minute (since the easing, 75 s) on every map, wherever its loop runs.
+#[test]
+fn a_lone_bot_finds_and_fells_a_person_standing_still_on_every_map() {
+    let mut missed = Vec::new();
+    for (map, from) in (0..crate::maps::COUNT).flat_map(|m| [(m, 0), (m, 53), (m, 140)]) {
+        // seat 1 a person, seat 2 a bot, seats 3 and 4 left empty
+        let mut w = World::online(0b0001, 0b1100, [0, 1, 2, 3], 0);
+        w.tick = from;
+        w.start_round(map);
+        for _ in 0..crate::rounds::COUNT_TICKS + crate::rounds::XRAY_TICKS {
+            w.step(&[Input::default()]);
+            if !w.players[0].alive() {
+                break;
+            }
+        }
+        if w.players[0].alive() {
+            missed.push((w.map.name, from));
+        }
+    }
+    assert!(missed.is_empty(), "the person still stands on {missed:?}");
+}
+
+/// T20: the harder the skill, the sooner a lone bot fells a person
+/// standing still, over every map.
+#[test]
+fn a_harder_bot_fells_a_person_sooner() {
+    let took = |skill: crate::pilot::Skill| -> i64 {
+        let mut ticks = 0;
+        for (map, from) in (0..crate::maps::COUNT).flat_map(|m| [(m, 0), (m, 53), (m, 140)]) {
+            let mut w = World::online(0b0001, 0b1100, [0, 1, 2, 3], 0);
+            w.skill = skill;
+            w.tick = from;
+            w.start_round(map);
+            for _ in 0..crate::rounds::COUNT_TICKS + 60 * 60 {
+                w.step(&[Input::default()]);
+                ticks += 1;
+                if !w.players[0].alive() {
+                    break;
+                }
+            }
+        }
+        ticks
+    };
+    use crate::pilot::Skill::*;
+    let (easy, normal, hard) = (took(Easy), took(Normal), took(Hard));
+    assert!(easy > normal && normal > hard, "{easy} {normal} {hard}");
+    // Sam, after T21: "the bots are all still way too difficult". Eased,
+    // each skill is slower than the one below it was at T21 (Easy 21034,
+    // Normal 16708, Hard 13959 ticks).
+    assert!(normal > 21034 && hard > 16708, "{normal} {hard}");
+}
+
+/// T20: a bot sees the shot that hit it, and low, the nearest spawn out
+/// of its target's sight; whole, it has no cover to go to.
+#[test]
+fn a_bot_hit_sees_its_shooter_and_low_a_spawn_out_of_its_sight() {
+    let mut sc = Scratch::default();
+    let mut covered = 0;
+    for map in 0..crate::maps::COUNT {
+        let mut w = World::online(0, 0, [0, 1, 2, 3], 0);
+        w.start_round(map);
+        for k in [2, 3] {
+            w.players[k].dead = DOWN_FOR_ROUND;
+        }
+        // the shooter 2 m from the bot, in sight
+        let at = w.players[0].body.origin.add(v3(int(2), 0, 0));
+        w.players[1].body = crate::movement::Body::at(at);
+        w.hurt(1, 0, 40);
+        let v = w.view(0, &mut sc);
+        assert_eq!(v.hit_from, Some(w.players[1].eye_now()), "{map}");
+        assert_eq!(v.cover, None, "{map}: whole, it stands and fights");
+        w.hurt(1, 0, 40);
+        let v = w.view(0, &mut sc);
+        let (chest, cover) = (v.chest.expect("in sight"), v.cover);
+        if let Some(c) = cover {
+            covered += 1;
+            assert!(!w.clear(&mut sc, chest, c.add(v3(0, ONE * 14 / 10, 0))), "{map}");
+        }
+    }
+    assert!(covered >= crate::maps::COUNT / 2, "cover on only {covered} maps");
+}
+
+/// T19: in a match a bot hunts the nearest other seat standing, seen or
+/// not; in the practice room it keeps its loop.
+#[test]
+fn in_a_match_a_bot_hunts_the_nearest_other_seat_standing() {
+    let mut w = World::online(0, 0, [0, 1, 2, 3], 0);
+    w.start_round(2);
+    let mut sc = Scratch::default();
+    let me = w.players[1].body.origin;
+    let nearest = [0, 2, 3]
+        .iter()
+        .map(|&k| w.players[k].body.origin)
+        .min_by_key(|f| f.sub(me).len())
+        .unwrap();
+    assert_eq!(w.view(1, &mut sc).hunt, Some(nearest));
+    assert!(w.view(1, &mut sc).nav.is_some());
+    let w = settled(Bot::Shoots);
+    assert_eq!(w.view(1, &mut sc).hunt, None);
+    assert!(w.view(1, &mut sc).nav.is_none());
+}
+
+/// Sam, T27: "i fell out of the map and there is no killbox". Every map
+/// has its floor at its lowest point; 20 m under it a fall fells you, in
+/// the practice room as in a match.
+#[test]
+fn a_player_fallen_twenty_metres_below_the_map_is_felled_and_one_above_is_not() {
+    // each floor is a metre thick
+    assert_eq!(World::room(Bot::Moves).map.lowest(), -int(1));
+    for m in crate::maps::all() {
+        assert!(m.lowest() >= -int(1), "{}: {}", m.name, m.lowest());
+    }
+    for depth in [19, 21] {
+        let mut w = World::online(0b1, 0, [0, 1, 2, 3], 0);
+        let low = w.map.lowest() - int(depth);
+        for p in &mut w.players[..2] {
+            p.body = body_at(v3(p.body.origin.x, low, p.body.origin.z));
+        }
+        w.step(&[Input::default()]);
+        let felled = |p: &Player| !p.alive() && p.dead == DOWN_FOR_ROUND && p.health == 0;
+        // a person and a bot alike
+        assert_eq!(felled(&w.players[0]), depth > 20, "{depth} m");
+        assert_eq!(felled(&w.players[1]), depth > 20, "{depth} m, the bot");
+        assert!(w.players[2].alive());
+    }
+    let mut w = World::room(Bot::Moves);
+    w.players[0].body = body_at(v3(0, -int(22), 0));
+    run(&mut w, Input::default(), 1);
+    assert!(!w.players[0].alive());
+    run(&mut w, Input::default(), RESPAWN as usize + 1);
+    assert!(
+        w.players[0].alive() && w.players[0].body.origin.y >= 0,
+        "back at the spawn"
+    );
+}
+
+/// T27: on every walled map the walls' inner faces stand where
+/// `Map::inside` says, the floor reaching a metre past them. T28: the Plaza
+/// has no walls and no inside, and (T31) the Tobogán.
+#[test]
+fn every_maps_walls_stand_at_the_edge_of_its_inside() {
+    let mut maps = crate::maps::all().to_vec();
+    maps.push(crate::map::practice());
+    for m in &maps {
+        assert_eq!(m.brushes[0].surface, crate::map::Surface::Floor, "{}", m.name);
+        // T31: nor the Tobogán, whose arena is walled in stone blocks; T37:
+        // nor the Cubo, walked on outside as well as in
+        let open = ["map_plaza", "map_tobogan", "map_cubo"].contains(&m.name);
+        assert_eq!(m.inside().is_none(), open, "{}", m.name);
+        let Some((lo, hi)) = m.inside() else { continue };
+        let walls: Vec<_> = m
+            .brushes
+            .iter()
+            .filter(|b| b.surface == crate::map::Surface::Wall)
+            .collect();
+        let side = |f: &dyn Fn(&crate::map::Brush) -> bool| walls.iter().any(|b| f(b));
+        assert!(side(&|b| b.maxs.x == lo.x), "{}: west", m.name);
+        assert!(side(&|b| b.mins.x == hi.x), "{}: east", m.name);
+        assert!(side(&|b| b.maxs.z == lo.z), "{}: north", m.name);
+        assert!(side(&|b| b.mins.z == hi.z), "{}: south", m.name);
+    }
+}
+
+/// Sam, T27: "i fell out of the map". Flung over a wall at speed, you
+/// meet nothing in the sky and come down inside.
+#[test]
+fn a_player_flung_over_a_wall_comes_down_inside_it() {
+    for m in 0..crate::maps::COUNT {
+        // alone: no bot to shoot you on the way down
+        let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+        w.start_round(m);
+        let Some((lo, hi)) = w.map.inside() else { continue };
+        let high = w.map.brushes.iter().map(|b| b.maxs.y).max().unwrap();
+        let p = &mut w.players[0];
+        p.body = body_at(v3(lo.x + int(2), high + int(3), (lo.z + hi.z) / 2));
+        p.body.velocity = v3(-int(40), int(10), 0);
+        let mut lowest_x = p.body.origin.x;
+        for _ in 0..600 {
+            w.step(&[Input::default()]);
+            lowest_x = lowest_x.min(w.players[0].body.origin.x);
+        }
+        let p = &w.players[0];
+        assert!(lowest_x >= lo.x, "map {m}: out to x {}", lowest_x / ONE);
+        // down inside, not standing on the top of the west wall it went
+        // over (it may land on something inside, as the Acueducto's arches)
+        let tops = w
+            .map
+            .brushes
+            .iter()
+            .filter(|b| b.surface == crate::map::Surface::Wall && b.maxs.x == lo.x)
+            .map(|b| b.maxs.y)
+            .min()
+            .unwrap();
+        let y = p.body.origin.y;
+        assert!(p.alive() && y >= 0 && y < tops, "map {m}: down at y {}", y / ONE);
+    }
+}
+
+/// Sam, T28: "in the plaza, if you fall out of the circular ramp, you
+/// should fall off the map, not into a little holding pen you cant get out
+/// of". Every 5° round the ring, straight down from just behind the stands
+/// there is nothing, and from just inside their foot there is the floor;
+/// and a player flung over their top falls and is felled.
+#[test]
+fn over_the_top_of_the_plazas_stands_is_a_fall_off_the_map() {
+    let m = crate::maps::plaza();
+    let mut sc = crate::trace::Scratch::default();
+    for deg in (0..360).step_by(5) {
+        let a = fx::TURN * deg / 360;
+        let r = ONE * 275 / 10;
+        let p = v3(fx::mul(r, fx::sin(a)), int(9), fx::mul(r, fx::cos(a)));
+        let down = p.sub(v3(0, int(40), 0));
+        let t = crate::trace::trace_box(&m, &mut sc, p, down, V3::ZERO, V3::ZERO);
+        assert!(!t.hit(), "{deg}°: something under it at y {}", t.end.y / ONE);
+        let r = ONE * 209 / 10;
+        let p = v3(fx::mul(r, fx::sin(a)), ONE, fx::mul(r, fx::cos(a)));
+        let down = p.sub(v3(0, int(2), 0));
+        let t = crate::trace::trace_box(&m, &mut sc, p, down, V3::ZERO, V3::ZERO);
+        assert!(t.hit() && t.end.y.abs() < ONE / 100, "{deg}°: no floor at 20.9 m");
+    }
+    // alone: no bot to shoot you on the way
+    let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+    w.start_round(0);
+    assert_eq!(w.map.name, "map_plaza");
+    let p = &mut w.players[0];
+    p.body = body_at(v3(0, int(10), int(25)));
+    p.body.velocity = v3(0, int(4), int(10));
+    let mut out = false;
+    for _ in 0..600 {
+        w.step(&[Input::default()]);
+        out |= w.players[0].body.origin.z > int(28);
+        if !w.players[0].alive() {
+            break;
+        }
+    }
+    assert!(out, "it went over the top");
+    assert!(!w.players[0].alive(), "felled by the fall");
+}
+
+/// Sam, T30: "a melee weapon that has a long wind up time but then fires
+/// you in the direction you are aiming at 50 m/s". The garrocha does
+/// nothing through its wind-up, then flings you north at 50 m/s, and its
+/// point fells the straw target 12 m ahead; put away while winding up, it
+/// flings no one.
+#[test]
+fn a_garrocha_wound_up_flings_you_along_the_aim_at_fifty_and_its_point_fells_what_it_meets() {
+    let mut w = settled(Bot::Moves);
+    w.players[0].body.origin = v3(int(8), 0, int(8));
+    holding(&mut w, Weapon::Garrocha);
+    // the press is the swing's first tick
+    w.step(&[fire()]);
+    for t in 2..weapons::GARROCHA_WINDUP {
+        w.step(&[Input::default()]);
+        assert!(w.players[0].body.speed() < int(1), "still, winding up: tick {t}");
+    }
+    w.step(&[Input::default()]);
+    let v = w.players[0].body.velocity;
+    assert!(near(v.z, -int(50), ONE), "flung north at 50: {v:?}");
+    assert!(v.x.abs() < ONE / 10);
+    run(&mut w, Input::default(), 20);
+    assert_eq!(w.dummies[0].health, 0, "the point fells the target");
+
+    let mut w = settled(Bot::Moves);
+    holding(&mut w, Weapon::Garrocha);
+    w.step(&[fire()]);
+    run(&mut w, Input::default(), 30);
+    holding(&mut w, Weapon::Katana);
+    run(&mut w, Input::default(), weapons::GARROCHA_WINDUP as usize);
+    assert!(w.players[0].body.speed() < int(1), "put away, no fling");
+}
+
+/// Sam, T31: "a giant slide that you go down and at the bottom hit a huge
+/// jump then land in an arena ... and if you fall off the ramp you die".
+/// Let into the top of the Tobogán's trough and left alone, you slide to
+/// the lip, fly, and come down standing in the arena; just past its side
+/// partway down, you fall and are felled.
+#[test]
+fn down_the_toboga_n_and_over_its_jump_you_land_in_the_arena_and_off_its_side_you_die() {
+    let tobogan = (0..crate::maps::COUNT)
+        .find(|&k| crate::maps::map(k).name == "map_tobogan")
+        .unwrap();
+    let start = |at: V3, push: V3| {
+        // alone: no bot to shoot you on the way
+        let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+        w.start_round(tobogan);
+        run(&mut w, Input::default(), crate::rounds::COUNT_TICKS as usize + 1);
+        let p = &mut w.players[0];
+        p.body = body_at(at);
+        p.body.velocity = push;
+        w
+    };
+    let top = v3(0, int(90), int(238));
+    let mut w = start(top, v3(0, 0, -int(2)));
+    let (mut fastest, mut highest_after_lip) = (0, 0);
+    for _ in 0..60 * 20 {
+        w.step(&[Input::default()]);
+        let b = &w.players[0].body;
+        fastest = fastest.max(b.speed());
+        if b.origin.z < int(30) {
+            highest_after_lip = highest_after_lip.max(b.origin.y);
+        }
+    }
+    let p = &w.players[0];
+    let (o, fast, high) = (p.body.origin, fastest / ONE, highest_after_lip / ONE);
+    assert!(p.alive(), "felled: at {o:?}, {fast} m/s at most");
+    assert!(
+        p.body.on_ground && o.y.abs() < ONE / 10 && o.z < int(20) && o.z > -int(160),
+        "down in the arena: at {o:?}, {fast} m/s at most, {high} m up past the lip"
+    );
+    assert!(fast > 35, "a slide fast enough to fly: {fast} m/s");
+
+    // just past the trough's edge halfway down, there is nothing under you
+    let mut w = start(v3(int(11), int(68), int(165)), V3::ZERO);
+    run(&mut w, Input::default(), 60 * 8);
+    assert!(!w.players[0].alive(), "off the side, felled by the fall");
+}
+
+/// T33: the Selva alone, the round under way, and the first vine.
+fn at_a_vine() -> (World, crate::map::Vine) {
+    let selva = (0..crate::maps::COUNT)
+        .find(|&k| crate::maps::map(k).name == "map_selva")
+        .unwrap();
+    let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+    w.start_round(selva);
+    run(&mut w, Input::default(), crate::rounds::COUNT_TICKS as usize + 1);
+    let v = w.map.vines[0];
+    // in the air 3 m short of it along x, going its way at a run
+    let p = &mut w.players[0];
+    p.body.origin = v3(v.top.x - int(3), int(3), v.top.z);
+    p.body.velocity = v3(int(9), int(2), 0);
+    p.body.on_ground = false;
+    p.aim.yaw = yaw_of(v3(ONE, 0, 0));
+    (w, v)
+}
+
+/// Sam, T33: "vines on them you can swing along". Jumped into with F held
+/// (T36), a vine takes hold; on it the hands stay its length from its top
+/// while the body swings past it and up; Space lets go with the swing's
+/// speed and a little lift, and that vine does not take you straight back.
+#[test]
+fn a_vine_jumped_into_takes_hold_swings_you_up_past_it_and_lets_go_on_space() {
+    let (mut w, v) = at_a_vine();
+    for _ in 0..30 {
+        w.step(&[keys(VINE)]);
+        if w.players[0].vine.is_some() {
+            break;
+        }
+    }
+    let c = w.players[0].vine.expect("the vine takes hold");
+    assert!(c.length <= v.length);
+    let mut high = 0;
+    let mut swing_x = Vec::new();
+    for t in 0..40 {
+        w.step(&[keys(VINE)]);
+        let p = &w.players[0];
+        assert!(p.vine.is_some(), "still holding at {t}");
+        let hands = p.body.origin.add(v3(0, VINE_GRIP, 0));
+        let off = hands.sub(v.top).len() - c.length;
+        assert!(
+            off.abs() < ONE / 20,
+            "{} cm off the vine's length at {t}",
+            off * 100 / ONE
+        );
+        high = high.max(p.body.origin.y);
+        swing_x.push(p.body.origin.x);
+    }
+    let last = *swing_x.last().unwrap();
+    assert!(
+        last > v.top.x + int(2),
+        "swung past it: {}",
+        fx::decimal(last - v.top.x, 1)
+    );
+    assert!(high > int(3), "and up: {}", fx::decimal(high, 1));
+    let before = w.players[0].body.velocity;
+    w.step(&[keys(JUMP | VINE)]);
+    let p = &w.players[0];
+    assert!(p.vine.is_none(), "Space lets go");
+    let after = p.body.velocity;
+    assert!(near(after.x, before.x, ONE / 2), "{after:?} kept {before:?}");
+    assert!(
+        after.y > before.y + int(2),
+        "with a lift: {after:?} from {before:?}"
+    );
+    // straight back through it, the same vine does not take hold again
+    w.players[0].body.origin = v3(v.top.x, int(3), v.top.z);
+    w.players[0].body.velocity = v3(0, int(1), 0);
+    w.step(&[keys(JUMP | VINE)]);
+    assert!(w.players[0].vine.is_none(), "not again so soon");
+}
+
+/// Sam, T36: "vines should be grabbable with a different button than space
+/// / left click". Jumped into without F, a vine does not take hold; with F
+/// held it does, and letting go of F drops off keeping the swing's speed,
+/// with no lift.
+#[test]
+fn a_vine_takes_hold_only_while_f_is_held_and_letting_go_of_f_drops_off() {
+    let (mut w, _) = at_a_vine();
+    for t in 0..30 {
+        w.step(&[keys(JUMP)]);
+        // nor taken and dropped in one tick, which would leave the vine at rest
+        let p = &w.players[0];
+        assert!(p.vine.is_none() && p.vine_rest == 0, "taken without F at {t}");
+    }
+    let (mut w, _) = at_a_vine();
+    for _ in 0..30 {
+        w.step(&[keys(VINE)]);
+    }
+    assert!(w.players[0].vine.is_some(), "F takes hold");
+    let before = w.players[0].body.velocity;
+    w.step(&[Input::default()]);
+    let p = &w.players[0];
+    assert!(p.vine.is_none(), "letting go of F drops off");
+    let after = p.body.velocity;
+    assert!(near(after.x, before.x, ONE / 2), "{after:?} kept {before:?}");
+    assert!(after.y < before.y + ONE, "no lift: {after:?} from {before:?}");
+}
+
+/// T33: on a vine W pushes the swing along the view, so held toward the
+/// swing it carries higher than left alone; held jump, as when hopping in,
+/// does not let go until it is pressed afresh. F is held throughout (T36).
+#[test]
+fn on_a_vine_w_pumps_the_swing_higher_and_held_space_does_not_let_go() {
+    let highest = |input: Input| {
+        let (mut w, _) = at_a_vine();
+        let mut high = 0;
+        let input = Input {
+            keys: input.keys | VINE,
+            ..input
+        };
+        for _ in 0..70 {
+            w.step(&[input]);
+            high = high.max(w.players[0].body.origin.y);
+        }
+        assert!(w.players[0].vine.is_some(), "{input:?} still holds");
+        high
+    };
+    let alone = highest(Input::default());
+    let pumped = highest(keys(FORWARD));
+    assert!(
+        pumped > alone + ONE / 4,
+        "{} m against {} m",
+        fx::decimal(pumped, 2),
+        fx::decimal(alone, 2)
+    );
+    let held = highest(keys(JUMP));
+    assert!(held > int(3));
+}
+
+/// T33: a bot's route knows nothing of vines: it passes through one
+/// without taking hold, the vine key held by the person or not (T36).
+#[test]
+fn a_bot_does_not_take_hold_of_a_vine() {
+    let (mut w, _) = at_a_vine();
+    w.players[0].pilot = Some(crate::pilot::Pilot::default());
+    run(&mut w, keys(VINE), 30);
+    assert!(w.players[0].vine.is_none());
+}
+
+/// T34: the lifelike skins inside the hit envelope (CS-5), from the reach the
+/// bake measured (`data/skins_reach.json`): every piece of every lifelike
+/// body, in every lower clip with the aim, the reload and the raise on top,
+/// no further than `BODY_R` from the upright line and no higher than the
+/// head's top, standing or (ducked and sliding) ducked. A cut and a thrust
+/// carry the hands out with the weapon, as the painted figure's are, and are
+/// not held to it.
+///
+/// The person decided two pieces keep their form past it, "they can be very
+/// realistic and keep their current form" (2026-11-08): the Hidalgo's hat
+/// (2.07 m in Style Lab's rest pose) and the Infanta's farthingale with its
+/// hoops (0.98 m across). The rest of `REACHES` is what the bake measured
+/// where a lifelike body still reaches past the envelope (the knights'
+/// helms, shoes at the front of the stride, knees and hats in a squat, El
+/// Sordo's cloak): each awaits the person (SECOND-ORDER R23.6). Any piece
+/// not listed that reaches past the envelope fails, and so does a listed one
+/// reaching further than its measured reach, rounded up to the centimetre.
+#[test]
+fn every_lifelike_body_stays_inside_the_hit_envelope_but_what_it_is_allowed() {
+    use crate::weapons::{BODY_R, HEAD_R};
+    #[derive(PartialEq)]
+    enum Reach {
+        Out,
+        Up,
+        UpDucked,
+    }
+    use Reach::*;
+    const REACHES: &[(&str, &str, Reach, i32)] = &[
+        ("hidalgo", "body", Up, 198),
+        ("hidalgo", "body", UpDucked, 135),
+        ("hidalgo", "hat", Up, 209),
+        ("hidalgo", "hat", UpDucked, 146),
+        ("hidalgo", "hatband", Up, 198),
+        ("hidalgo", "hatband", UpDucked, 133),
+        ("hidalgo", "hose", Out, 51),
+        ("hidalgo", "shoe_l", Out, 53),
+        ("hidalgo", "shoe_r", Out, 53),
+        ("infanta", "band_1", Out, 49),
+        ("infanta", "band_2", Out, 50),
+        ("infanta", "band_3", Out, 51),
+        ("infanta", "farthingale", Out, 51),
+        ("harlequin", "bicorne", UpDucked, 131),
+        ("harlequin", "body", UpDucked, 126),
+        ("harlequin", "cockade", UpDucked, 128),
+        ("harlequin", "tights_l", Out, 51),
+        ("harlequin", "tights_r", Out, 51),
+        ("sordo", "cloak", Out, 67),
+        ("sordo", "coat_skirt", Out, 64),
+        ("fraile", "body", Out, 57),
+        ("fraile", "body", UpDucked, 125),
+        ("fraile", "hood", UpDucked, 131),
+        ("torero", "breeches", Out, 49),
+        ("torero", "montera_lobes", UpDucked, 126),
+        ("torero", "tassel_l", Out, 50),
+        ("torero", "tassel_r", Out, 50),
+        ("knight_a", "body", Up, 194),
+        ("knight_a", "body", UpDucked, 131),
+        ("knight_a", "cloak", Out, 57),
+        ("knight_a", "gauntlet_l", Out, 49),
+        ("knight_a", "greave_l", Out, 49),
+        ("knight_a", "greave_l_edge", Out, 50),
+        ("knight_a", "greave_r", Out, 49),
+        ("knight_a", "greave_r_edge", Out, 50),
+        ("knight_a", "helm", Up, 203),
+        ("knight_a", "helm", UpDucked, 137),
+        ("knight_a", "mail_leg_l", Out, 52),
+        ("knight_a", "mail_leg_r", Out, 53),
+        ("knight_a", "poleyn_l", Out, 54),
+        ("knight_a", "poleyn_r", Out, 55),
+        ("knight_a", "ridge", Out, 49),
+        ("knight_a", "ridge", Up, 205),
+        ("knight_a", "ridge", UpDucked, 139),
+        ("knight_a", "sabaton_l", Out, 53),
+        ("knight_a", "sabaton_r", Out, 53),
+        ("knight_b", "body", Up, 194),
+        ("knight_b", "body", UpDucked, 131),
+        ("knight_b", "crown_band", Up, 198),
+        ("knight_b", "crown_band", UpDucked, 132),
+        ("knight_b", "crown_spikes", Out, 54),
+        ("knight_b", "crown_spikes", Up, 212),
+        ("knight_b", "crown_spikes", UpDucked, 147),
+        ("knight_b", "embers", Out, 50),
+        ("knight_b", "gauntlet_l", Out, 49),
+        ("knight_b", "greave_l", Out, 49),
+        ("knight_b", "greave_l_edge", Out, 50),
+        ("knight_b", "greave_r", Out, 49),
+        ("knight_b", "greave_r_edge", Out, 50),
+        ("knight_b", "helm", Up, 202),
+        ("knight_b", "helm", UpDucked, 138),
+        ("knight_b", "lame_4", Out, 51),
+        ("knight_b", "lame_4_edge", Out, 51),
+        ("knight_b", "mail_leg_l", Out, 52),
+        ("knight_b", "mail_leg_r", Out, 53),
+        ("knight_b", "poleyn_l", Out, 54),
+        ("knight_b", "poleyn_r", Out, 55),
+        ("knight_b", "sabaton_l", Out, 53),
+        ("knight_b", "sabaton_r", Out, 53),
+        ("knight_b", "tabard", Out, 49),
+    ];
+    let reach: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../data/skins_reach.json")).unwrap();
+    let top = crate::movement::EYE_STAND + HEAD_R;
+    let ducked_top = crate::movement::EYE_DUCK + HEAD_R;
+    let allowed = |skin: &str, piece: &str, kind: Reach| -> Option<Fx> {
+        REACHES
+            .iter()
+            .find(|(s, p, k, _)| *s == skin && *p == piece && *k == kind)
+            .map(|r| r.3 * ONE / 100)
+    };
+    let mut checked = 0;
+    for skin in crate::skins::SKINS {
+        let pairs = reach["skins"][skin.model()]
+            .as_object()
+            .unwrap_or_else(|| panic!("{} has no reach", skin.model()));
+        for (pair, pieces) in pairs {
+            let (lower, upper) = pair.split_once('+').unwrap();
+            if matches!(upper, "slash" | "thrust") {
+                continue;
+            }
+            let ducked = matches!(lower, "duck" | "slide");
+            for (piece, r) in pieces.as_object().unwrap() {
+                let (out, up) = (r[0].as_i64().unwrap() as Fx, r[1].as_i64().unwrap() as Fx);
+                let what = format!("{} {piece} in {pair}", skin.model());
+                let most_out = allowed(skin.model(), piece, Out).unwrap_or(BODY_R);
+                assert!(out <= most_out, "{what} reaches {} m out", fx::decimal(out, 3));
+                let (most_up, kind) = if ducked { (ducked_top, UpDucked) } else { (top, Up) };
+                let most_up = allowed(skin.model(), piece, kind).unwrap_or(most_up);
+                assert!(up <= most_up, "{what} reaches {} m up", fx::decimal(up, 3));
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 1000, "only {checked} pieces checked");
+    // the person's two, as they decided them: the hat to 2.07 m standing
+    // (the bake's 2.09 with the stride's bob), the farthingale's hoops to
+    // half of 0.98 m across, and 2 cm for the hoop bands round it
+    assert!(allowed("hidalgo", "hat", Up).unwrap() <= ONE * 209 / 100);
+    assert!(allowed("infanta", "farthingale", Out).unwrap() <= ONE * 51 / 100);
+}
+
+/// T37: the Cubo alone, the round under way, the one player stood at
+/// `at` on the inner floor facing `face`.
+fn in_the_cubo(at: V3, face: V3) -> World {
+    let cubo = (0..crate::maps::COUNT)
+        .find(|&k| crate::maps::map(k).name == "map_cubo")
+        .unwrap();
+    let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+    w.start_round(cubo);
+    run(&mut w, Input::default(), crate::rounds::COUNT_TICKS as usize + 1);
+    let p = &mut w.players[0];
+    p.body = body_at(at);
+    p.prev = at;
+    p.aim.yaw = yaw_of(face);
+    p.aim.pitch = 0;
+    run(&mut w, Input::default(), 5);
+    w
+}
+
+/// Sam, T37: "when you touch a wall / start to approach it, your gravity
+/// shifts to walk on that wall, with the intent being you lose no
+/// momentum". Run across the floor into the east wall, a body turns onto
+/// it as it nears it, its speed and view turned up the wall with it; it
+/// lands on the wall and runs on up it at much the speed it ran in at.
+#[test]
+fn run_into_a_cubo_wall_and_you_run_on_up_it_at_the_same_speed() {
+    let mut w = in_the_cubo(v3(int(4), 0, int(8)), v3(ONE, 0, 0));
+    let mut before = None;
+    for _ in 0..240 {
+        let speed = w.players[0].speed();
+        w.step(&[keys(FORWARD)]);
+        if w.players[0].frame != Turn::IDENTITY {
+            before = Some(speed);
+            break;
+        }
+    }
+    let before = before.expect("the wall takes the body");
+    let p = &w.players[0];
+    assert_eq!(p.up(), v3(-ONE, 0, 0), "the east wall is its floor");
+    // the view turned up the wall with it
+    assert!(p.look().y > ONE * 9 / 10, "looking up the wall: {:?}", p.look());
+    assert!(
+        p.body.velocity.y >= before * 9 / 10,
+        "carried up: {:?}",
+        p.body.velocity
+    );
+    let y0 = p.body.origin.y;
+    let mut landed = false;
+    let mut slowest = before;
+    for _ in 0..30 {
+        w.step(&[keys(FORWARD)]);
+        let p = &w.players[0];
+        landed |= p.body.on_ground;
+        if landed {
+            slowest = slowest.min(p.speed());
+        }
+    }
+    let p = &w.players[0];
+    assert!(landed, "it stands on the wall");
+    // the view, its turn done, looks where the body looks, level to the wall
+    let cam = w.camera(0, 0, Mouse::default(), ONE, false);
+    assert!(
+        cam.fwd.sub(p.look()).len() < ONE / 50,
+        "{:?} against {:?}",
+        cam.fwd,
+        p.look()
+    );
+    assert_eq!(cam.level, p.up());
+    assert!(
+        slowest >= before * 9 / 10,
+        "{} m/s on the wall from {} on the floor",
+        fx::decimal(slowest, 1),
+        fx::decimal(before, 1)
+    );
+    assert!(p.body.origin.y > y0 + int(3), "and runs up it");
+    assert!(
+        p.body.origin.x > int(crate::maps::CUBO_HALF) - int(2),
+        "against the wall"
+    );
+}
+
+/// T37: from the roof outside, run off its edge and a body rolls round the
+/// edge onto the wall's outer face below it, still running.
+#[test]
+fn run_off_the_cubos_outer_edge_and_you_roll_round_it_onto_the_side() {
+    let h = int(crate::maps::CUBO_HALF + crate::maps::CUBO_WALL);
+    let top = int(2 * crate::maps::CUBO_HALF + crate::maps::CUBO_WALL);
+    let mut w = in_the_cubo(v3(h - int(6), top, int(8)), v3(ONE, 0, 0));
+    assert!(w.players[0].body.on_ground, "it stands on the roof");
+    let mut rolled = false;
+    for _ in 0..120 {
+        w.step(&[keys(FORWARD)]);
+        rolled |= w.players[0].up() == v3(ONE, 0, 0);
+        if rolled && w.players[0].body.on_ground {
+            break;
+        }
+    }
+    let p = &w.players[0];
+    assert!(rolled && p.body.on_ground, "on the east face: up {:?}", p.up());
+    assert!(
+        p.body.velocity.y < -int(5),
+        "running down it: {:?}",
+        p.body.velocity
+    );
+    assert!(
+        near(p.body.origin.x, h, ONE / 10),
+        "its feet on the face: {}",
+        fx::decimal(p.body.origin.x, 2)
+    );
+}
+
+/// Sam, T37: "there should be a hole that lets you go on the outside of
+/// the cube as well". Walk into the hole in the floor, and a body goes
+/// down its lining and round its rim onto the underside, outside.
+#[test]
+fn walk_into_the_cubos_hole_and_you_come_out_on_its_underside() {
+    let mut w = in_the_cubo(v3(-int(6), 0, ONE / 2), v3(ONE, 0, 0));
+    for _ in 0..240 {
+        w.step(&[keys(FORWARD)]);
+        let p = &w.players[0];
+        if p.up() == v3(0, -ONE, 0) && p.body.on_ground {
+            break;
+        }
+    }
+    let p = &w.players[0];
+    assert_eq!(p.up(), v3(0, -ONE, 0), "the underside is its floor");
+    assert!(p.body.on_ground);
+    assert!(near(p.body.origin.y, -int(crate::maps::CUBO_WALL), ONE / 10));
+}
+
+/// T37: thrown out into the open beside the cube, a body falls back to
+/// the face it is over, and is not felled for falling.
+#[test]
+fn out_in_the_open_beside_the_cubo_you_fall_back_onto_it() {
+    let h = int(crate::maps::CUBO_HALF + crate::maps::CUBO_WALL);
+    let mut w = in_the_cubo(v3(int(4), 0, int(8)), v3(ONE, 0, 0));
+    let p = &mut w.players[0];
+    p.body.origin = v3(h + int(8), int(18), 0);
+    p.body.velocity = v3(int(5), int(5), 0);
+    p.body.on_ground = false;
+    run(&mut w, Input::default(), 300);
+    let p = &w.players[0];
+    assert!(p.alive());
+    assert_eq!(p.up(), v3(ONE, 0, 0));
+    assert!(
+        p.body.on_ground && near(p.body.origin.x, h, ONE / 10),
+        "{:?}",
+        p.body.origin
+    );
+}
+
+/// T37: dropped straight down the hole, a body falls onto the nearest side
+/// of the way through, not back up it, and goes on round onto the
+/// underside, outside.
+#[test]
+fn drop_down_the_cubos_hole_and_you_come_out_on_its_underside() {
+    let mut w = in_the_cubo(v3(-int(6), 0, ONE / 2), v3(ONE, 0, 0));
+    let p = &mut w.players[0];
+    p.body.origin = v3(ONE / 2, int(2), ONE / 4);
+    p.body.velocity = v3(0, -int(6), 0);
+    p.body.on_ground = false;
+    let mut out = false;
+    for _ in 0..240 {
+        w.step(&[Input::default()]);
+        let p = &w.players[0];
+        out |= p.body.origin.y < -int(crate::maps::CUBO_WALL);
+        if p.up() == v3(0, -ONE, 0) && p.body.on_ground {
+            break;
+        }
+    }
+    let p = &w.players[0];
+    assert!(out, "it came out of the hole");
+    assert_eq!(
+        p.up(),
+        v3(0, -ONE, 0),
+        "on the underside: {:?} at {:?}",
+        p.up(),
+        p.body.origin
+    );
+    // the underside, not the ceiling inside, which faces down too
+    assert!(p.body.on_ground && near(p.body.origin.y, -int(crate::maps::CUBO_WALL), ONE / 10));
+}
+
+/// T37: a turn never leaves a body inside a brush: run into the hole close
+/// to a side of it, where rolling over the rim would put the body's box
+/// into the next side, and at every tick the box is clear in its frame.
+#[test]
+fn a_turn_on_the_cubo_never_leaves_a_body_inside_a_brush() {
+    for z in [0, ONE, ONE * 3 / 2, ONE * 17 / 10] {
+        let mut w = in_the_cubo(v3(-int(6), 0, z), v3(ONE, 0, 0));
+        for t in 0..240 {
+            w.step(&[keys(FORWARD)]);
+            let p = &w.players[0];
+            let map = &w.turned[p.frame.index() as usize];
+            let mut m = crate::movement::Mover::new(map);
+            assert!(
+                crate::gravity::clear(&mut m, &p.body, p.frame.back(p.body.origin)),
+                "at z {} tick {t}: in a brush at {:?}, up {:?}",
+                fx::decimal(z, 1),
+                p.body.origin,
+                p.up()
+            );
+        }
+    }
+}
+
+/// T37: on every other map nobody's gravity turns: run at a wall and you
+/// stop at it, the world's up still yours.
+#[test]
+fn on_every_other_map_gravity_never_turns() {
+    for m in 0..crate::maps::COUNT {
+        let mut w = World::online(0b1, 0b1110, [0, 1, 2, 3], 0);
+        w.start_round(m);
+        if w.map.cube.is_some() {
+            continue;
+        }
+        assert!(w.turned.is_empty(), "{}", w.map.name);
+        for k in 0..4 {
+            w.players[0].aim.yaw = fx::QUARTER_TURN * k;
+            run(&mut w, keys(FORWARD | JUMP), 240);
+            assert_eq!(w.players[0].frame, Turn::IDENTITY, "{}", w.map.name);
+        }
+    }
+}

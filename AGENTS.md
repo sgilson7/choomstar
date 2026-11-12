@@ -51,6 +51,8 @@ Each model call re-reads the whole context, so what is read once is paid for on 
 
 None yet. When the person answers the opening entry's questions, add each rule that applies to every later session here, with its journal ID.
 
+- **Never stop a turn while the Autonomy paragraph says to keep going** (person, 2026-11-12). The plan and every CM default are approved. At the context limit, rewrite `STATE.md` and commit, but do not end the turn to ask for `/compact` or to wait for a reply; compaction happens on its own. Surface a link in one line and keep building in the same turn. Stopping after the journal cost the person about eight hours.
+
 ## Stopping
 
 Write the journal's opening entry, then `PLAN.md` from the brief, and stop until the person has read it, unless `BRIEF.md`'s Autonomy paragraph approves the plan in advance. When a rule in `BUILDER-SPEC.md` seems to block the work, stop and say so in a worklist row; do not loosen a check to make it pass. When a request is refused on safety grounds, leave the feature out and say so; do not reword the request to get past the refusal.

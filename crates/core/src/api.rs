@@ -3,17 +3,20 @@
 //! page can show as it is. The shim forwards these calls and nothing else.
 //!
 //! The core describes the screen as a view model (`Ui`): the screen's name,
-//! its panels and their actions, and the glossary's definitions. The page
-//! builds the DOM from that description without knowing what a panel means.
-//! Settings, screens and flags all come back through one function, `act`,
-//! with a dotted name such as `screen.show`, so a new option needs a new
-//! `match` arm here and no new shim function. (After Peter's Mandible.)
+//! its panels and their actions, the HUD's lines and the glossary's
+//! definitions. The page builds the DOM from it without knowing what a
+//! panel means. Settings, screens and flags all come back through one
+//! function, `act`, with a dotted name. (Builder's template and Chumworld
+//! Arena's api.rs, cut to M1's screens.)
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::{glossary, page};
+use crate::game::{Game, Screen};
+use crate::geom::v3;
+use crate::prim::{self, MeshId};
+use crate::{fx, input, look, render, world};
 
-fn ok<T: Serialize>(value: &T) -> String {
+pub fn ok<T: Serialize>(value: &T) -> String {
     serde_json::json!({ "ok": value }).to_string()
 }
 
@@ -21,21 +24,100 @@ fn error(message: String) -> String {
     serde_json::json!({ "error": message }).to_string()
 }
 
-/// What the page hands back on the next call. The page stores it and does
-/// not read it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct State {
-    pub screen: String,
-    pub strings: page::Strings,
-}
-
-/// One button: the action name and value the page sends back through `act`.
+/// One button: the action and value the page sends back through `act`.
+/// `engage`: pressing it should take the pointer for play.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Action {
     pub name: String,
     pub value: String,
     pub label: String,
     pub enabled: bool,
+    pub engage: bool,
+    /// M4: the field whose text this button sends as its value, if any
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub from: String,
+    /// M4: the field whose text this button copies, if any (the page's
+    /// clipboard; nothing goes through `act`)
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub copies: String,
+    /// M4: a small button beside others (the copy buttons, the seat switches)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub small: bool,
+}
+
+/// T25: a seat in the online lobby, drawn as a tall card round the figure
+/// standing in it (`Game::lineup`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Card {
+    pub id: String,
+    /// the seat, as Seat 2
+    pub heading: String,
+    /// who holds it: you, a player, a bot, or nobody
+    pub who: String,
+    /// `you`, `player`, `bot` or `empty`, for the page's styling
+    pub kind: String,
+    /// the skin worn, where a figure stands
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub skin: String,
+    /// T24: the last match: the seat that won it, or its rounds
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    /// where the figure stands on the screen: across, and the heights of
+    /// its head and its feet down, hundredths of a percent
+    pub at: [i32; 3],
+    /// the host's switch for a free seat
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<Action>,
+    /// T26: on your own card, the skins to click through, back and on,
+    /// and which of them this is
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pick: Vec<Action>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub picked: String,
+    /// T34: the style the seat's skin is worn in, Painted or Lifelike; and
+    /// on your own card the two to choose between, the one worn pressed
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub style: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub style_pick: Vec<Action>,
+}
+
+/// M4: a box of text: a code or link to copy (`fixed`), or a box to type
+/// a code into.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Field {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+    pub fixed: bool,
+}
+
+/// M4: online play as the page's transport needs it: the commands to run,
+/// and the status key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OnlineView {
+    pub cmds: Vec<crate::versus::Cmd>,
+    pub status: String,
+    /// this browser's checksums, `tick:sum` newest last, for the online
+    /// check to compare across browsers
+    pub sums: String,
+}
+
+/// A setting's row: its name, its value in words, and the buttons that
+/// change it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Setting {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+    pub actions: Vec<Action>,
+}
+
+/// A row of the controls table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Row {
+    pub key: String,
+    pub does: String,
 }
 
 /// One block of the screen. Empty fields are left out of the JSON.
@@ -47,7 +129,44 @@ pub struct Panel {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub text: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<Setting>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<Field>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub rows_heading: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<Row>,
+    /// T25: the online lobby's seats
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cards: Vec<Card>,
+}
+
+/// A line over the play view: its id, its text, and whether it shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Hud {
+    pub id: String,
+    pub text: String,
+    pub shown: bool,
+    /// M5: where on the screen it sits, hundredths of a percent across and
+    /// down (the markers through walls); none for the fixed lines
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<[i32; 2]>,
+    /// T18: how full (the health bar) or how strong (the red edge, the arc
+    /// to the shooter), hundredths of a percent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<i32>,
+    /// T18: the health bar's lost part, still shown to here (hundredths of
+    /// a percent)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trail: Option<i32>,
+    /// T18: turned clockwise this far (hundredths of a degree)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<i32>,
+    /// T18: a state the page styles: the bar `struck` or `low`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tone: Option<&'static str>,
 }
 
 /// A term and its definition, for the page's hover hints.
@@ -57,133 +176,1021 @@ pub struct Hint {
     pub definition: String,
 }
 
-/// Everything the page draws.
+/// Everything the page draws besides the 3D view.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Ui {
-    pub screen: String,
     pub title: String,
+    pub screen: String,
     pub panels: Vec<Panel>,
+    pub hud: Vec<Hud>,
+    /// the page should hold the pointer
+    pub capture: bool,
     pub hints: Vec<Hint>,
-    pub state: State,
+    /// shown where WebGL 2 is missing
+    pub no_webgl: String,
+    /// M4
+    pub online: OnlineView,
+    /// T32: what the page keeps for the next visit and hands back with
+    /// `prefs.load`; the page reads nothing in it
+    pub saved: String,
 }
 
-fn ui(state: State, hints: Vec<Hint>) -> Ui {
-    let panels = vec![Panel {
-        id: "intro".into(),
-        heading: String::new(),
-        text: state.strings.intro.clone(),
-        actions: Vec::new(),
-    }];
-    Ui {
-        screen: state.screen.clone(),
-        title: state.strings.title.clone(),
-        panels,
-        hints,
-        state,
+fn action(g: &Game, name: &str, value: &str, label_key: &str, engage: bool) -> Action {
+    Action {
+        name: name.into(),
+        value: value.into(),
+        label: g.strings.get(label_key),
+        enabled: true,
+        engage,
+        from: String::new(),
+        copies: String::new(),
+        small: false,
     }
 }
 
-fn hints_from(glossary_md: &str) -> Result<Vec<Hint>, String> {
-    let entries = glossary::parse(glossary_md).map_err(|e| e.message())?;
-    Ok(entries
-        .into_iter()
-        .map(|e| Hint {
-            term: e.term,
-            definition: e.definition,
-        })
-        .collect())
-}
-
-/// Checks the strings file and the glossary and returns the first screen.
-pub fn start(strings_json: &str, glossary_md: &str) -> String {
-    let run = || -> Result<Ui, String> {
-        let strings = page::parse_strings(strings_json).map_err(|e| e.message())?;
-        let hints = hints_from(glossary_md)?;
-        let state = State {
-            screen: "start".into(),
-            strings,
-        };
-        Ok(ui(state, hints))
-    };
-    match run() {
-        Ok(u) => ok(&u),
-        Err(e) => error(e),
+fn field(g: &Game, id: &str, label: &str, value: &str, fixed: bool) -> Field {
+    Field {
+        id: id.into(),
+        label: g.strings.get(label),
+        value: value.into(),
+        fixed,
     }
 }
 
-/// Applies one named action to the state the page holds. The template knows
-/// one action, `screen.show`, as the pattern for a project's own.
-pub fn act(state_json: &str, glossary_md: &str, name: &str, value: &str) -> String {
-    let run = || -> Result<Ui, String> {
-        let mut state: State =
-            serde_json::from_str(state_json).map_err(|e| format!("The state could not be read: {e}"))?;
-        let hints = hints_from(glossary_md)?;
-        match name {
-            "screen.show" => match value {
-                "start" => state.screen = value.to_string(),
-                other => return Err(format!("There is no screen \"{other}\".")),
+/// CS-Q22: the shooting-by-speed card for seat `me`: hits of shots fired
+/// in each band of speed, time at run speed or more, and the best speed.
+fn shooting_panel(g: &Game) -> Panel {
+    let s = &g.strings;
+    let p = &g.view_world().players[g.me()];
+    let sh = &p.shooting;
+    let mut out = panel("shooting");
+    out.heading = s.get("shooting");
+    let pct = |a: i32, b: i32| if b > 0 { a * 100 / b } else { 0 };
+    out.rows = ["band_walk", "band_run", "band_fast", "band_trick"]
+        .iter()
+        .enumerate()
+        .map(|(k, key)| Row {
+            key: s.get(key),
+            does: if sh.fired[k] == 0 {
+                s.get("band_none")
+            } else {
+                s.get("band_count")
+                    .replace("{pct}", &pct(sh.hit[k], sh.fired[k]).to_string())
+                    .replace("{hit}", &sh.hit[k].to_string())
+                    .replace("{fired}", &sh.fired[k].to_string())
             },
-            other => return Err(format!("Unknown action \"{other}\".")),
-        }
-        Ok(ui(state, hints))
+        })
+        .collect();
+    out.rows.push(Row {
+        key: s.get("time_fast"),
+        does: s
+            .get("percent")
+            .replace("{n}", &pct(sh.fast_ticks, sh.ticks).to_string()),
+    });
+    out.rows.push(Row {
+        key: s.get("best_speed"),
+        does: s
+            .get("hud_speed")
+            .replace("{speed}", &world::speed_text(p.top_speed)),
+    });
+    out
+}
+
+/// M4: the online screen: hosting (the room code, the invite link, the
+/// seats and Start), joining (a box for the code), a guest's lobby, or a
+/// match that has ended and why.
+fn online_panel(g: &Game) -> Panel {
+    let s = &g.strings;
+    let mut p = panel("online");
+    let leave = action(g, "screen.menu", "", "leave", false);
+    let Some(v) = g.versus.as_ref() else {
+        // Join: a box for the code, or the whole link
+        p.heading = s.get("join_match");
+        p.text = s.get("join_text");
+        p.fields = vec![field(g, "room-in", "room_code", &g.invited, false)];
+        p.actions = vec![
+            Action {
+                from: "room-in".into(),
+                ..action(g, "online.room", "", "join", false)
+            },
+            action(g, "screen.menu", "", "back", false),
+        ];
+        return p;
     };
-    match run() {
-        Ok(u) => ok(&u),
+    if v.ended() {
+        p.heading = s.get("match_ended");
+        p.text = s.get(v.status());
+        p.actions = vec![action(g, "screen.menu", "", "to_menu", false)];
+        return p;
+    }
+    p.heading = s.get(if v.host { "host_match" } else { "join_match" });
+    use crate::versus::Notice;
+    let notice = v.notice(g.now_us);
+    let fill = |key: &str, secs: i64| {
+        s.get(key)
+            .replace("{code}", &v.code)
+            .replace("{n}", &secs.to_string())
+    };
+    p.text = match (v.host, v.seat(), notice) {
+        (true, _, Some(Notice::Knocking)) => format!("{} {}", s.get("host_text"), s.get("online.knocking")),
+        (true, _, _) => s.get("host_text"),
+        (false, None, Some(Notice::StillLooking { secs })) => fill("online.still_looking", secs),
+        (false, None, Some(Notice::Looking { secs })) => fill("joining_text", secs),
+        (false, None, _) => fill("joining_text", 0),
+        (false, Some(_), _) if v.last.is_some() => s.get("online.again"),
+        (false, Some(_), _) => s.get("online.lobby"),
+    };
+    // T24: back after a match
+    if v.host && v.last.is_some() && !matches!(notice, Some(Notice::Knocking)) {
+        p.text = s.get("host_again");
+    }
+    p.fields = vec![field(g, "room-code", "room_code", &v.code, true)];
+    // a copy button says Copied once its text is on the clipboard
+    let copy = |id: &str, label: &str| Action {
+        copies: id.into(),
+        small: true,
+        ..action(g, "", "", if g.copied == id { "copied" } else { label }, false)
+    };
+    let mut copies = vec![copy("room-code", "copy_code")];
+    if !g.address.is_empty() {
+        let link = crate::versus::invite_link(&g.address, &v.code);
+        p.fields.push(field(g, "invite-link", "invite_link", &link, true));
+        copies.push(copy("invite-link", "copy_link"));
+    }
+    p.actions = copies;
+    // R10.12: a guest still looking can look again
+    if matches!(notice, Some(Notice::StillLooking { .. })) {
+        p.actions.push(action(g, "online.retry", "", "retry", false));
+    }
+    if v.host {
+        p.actions.push(action(
+            g,
+            "online.start",
+            "",
+            if v.last.is_some() {
+                "start_again"
+            } else {
+                "start_match"
+            },
+            true,
+        ));
+    }
+    p.actions.push(leave);
+    // T32: the host plans the match's maps and weapons
+    if v.host {
+        p.settings = plan_settings(g);
+    }
+    p.cards = cards(g, v);
+    p
+}
+
+/// T32: a playlist's name: every map, or the k-th of this browser's.
+fn playlist_name(g: &Game, k: usize) -> String {
+    if k == 0 {
+        g.strings.get("playlist_all")
+    } else {
+        g.strings.get("playlist_n").replace("{n}", &k.to_string())
+    }
+}
+
+/// T32: the three choices a match is planned from: the playlist, its
+/// order, and the weapons.
+fn plan_settings(g: &Game) -> Vec<Setting> {
+    let step = |name: &str, minus: &str, plus: &str| {
+        vec![
+            action(g, name, "-1", minus, false),
+            action(g, name, "1", plus, false),
+        ]
+    };
+    vec![
+        Setting {
+            id: "playlist".into(),
+            label: g.strings.get("setting_playlist"),
+            value: playlist_name(g, g.playlist),
+            actions: step("plan.playlist", "skin_prev", "skin_next"),
+        },
+        Setting {
+            id: "order".into(),
+            label: g.strings.get("setting_order"),
+            value: g
+                .strings
+                .get(if g.shuffle { "order_shuffled" } else { "order_turn" }),
+            actions: step("plan.order", "order_turn", "order_shuffled"),
+        },
+        Setting {
+            id: "weapons".into(),
+            label: g.strings.get("setting_weapons"),
+            value: g.strings.get(if g.random_weapons {
+                "weapons_random"
+            } else {
+                "weapons_placed"
+            }),
+            actions: step("plan.weapons", "weapons_placed", "weapons_random"),
+        },
+    ]
+}
+
+/// T32: the Playlists screen: the playlist shown, its maps in order with
+/// buttons to move or take each out; and on the right every map, a click
+/// adding it to the playlist's end.
+fn playlist_panels(g: &Game) -> Vec<Panel> {
+    let s = &g.strings;
+    let mut left = panel("playlist");
+    let list = g.playlists.get(g.editing);
+    match list {
+        None => {
+            left.heading = s.get("playlists");
+            left.text = s.get("no_playlists");
+        }
+        Some(maps) => {
+            left.heading = playlist_name(g, g.editing + 1);
+            left.text = s.get(if maps.is_empty() {
+                "playlist_empty"
+            } else {
+                "playlist_text"
+            });
+            let last = maps.len().saturating_sub(1);
+            left.settings = maps
+                .iter()
+                .enumerate()
+                .map(|(i, &m)| {
+                    let at = i.to_string();
+                    let button = |name: &str, label: &str, enabled: bool| Action {
+                        enabled,
+                        ..action(g, name, &at, label, false)
+                    };
+                    Setting {
+                        id: format!("place-{i}"),
+                        label: s.get("place_n").replace("{n}", &(i + 1).to_string()),
+                        value: s.get(crate::maps::map(m as usize).name),
+                        actions: vec![
+                            button("playlist.up", "map_up", i > 0),
+                            button("playlist.down", "map_down", i < last),
+                            button("playlist.remove", "map_remove", true),
+                        ],
+                    }
+                })
+                .collect();
+        }
+    }
+    let many = g.playlists.len() > 1;
+    left.actions = vec![
+        Action {
+            enabled: many,
+            small: true,
+            ..action(g, "playlist.step", "-1", "playlist_prev", false)
+        },
+        Action {
+            enabled: many,
+            small: true,
+            ..action(g, "playlist.step", "1", "playlist_next", false)
+        },
+        action(g, "playlist.new", "", "playlist_new", false),
+        Action {
+            enabled: list.is_some(),
+            ..action(g, "playlist.delete", "", "playlist_delete", false)
+        },
+        action(g, "playlists.back", "", "back", false),
+    ];
+    let mut right = panel("maps");
+    right.heading = s.get("maps_heading");
+    right.text = s.get("maps_text");
+    right.actions = (0..crate::maps::COUNT)
+        .map(|k| action(g, "playlist.add", &k.to_string(), crate::maps::map(k).name, false))
+        .collect();
+    vec![left, right]
+}
+
+/// T25: the lobby's four seats, each a card round its figure: who holds
+/// it, the skin worn, and after a match (T24) how it went. Your card
+/// changes your skin; the host's cards for free seats switch their bots.
+fn cards(g: &Game, v: &crate::versus::Versus) -> Vec<Card> {
+    let s = &g.strings;
+    let Some((cam, feet)) = g.lineup() else {
+        return Vec::new();
+    };
+    let m = cam.matrix(crate::render::Layer::Far, g.aspect);
+    let screen = |p: crate::geom::V3| {
+        let c = m.project(p.sub(cam.eye));
+        let w = c[3].max(1) as i64;
+        (
+            5_000 + (c[0] as i64 * 5_000 / w) as i32,
+            5_000 - (c[1] as i64 * 5_000 / w) as i32,
+        )
+    };
+    let n = v.links();
+    let bots = n.starting_skins();
+    (0..crate::online::SEATS)
+        .map(|k| {
+            let held = crate::online::holds(n.seats, k);
+            let empty = !held && crate::online::holds(n.empty, k);
+            let kind = if v.seat() == Some(k) {
+                "you"
+            } else if held {
+                "player"
+            } else if empty {
+                "empty"
+            } else {
+                "bot"
+            };
+            let skin = match kind {
+                "you" => g.skin,
+                "player" => n.skins[k],
+                _ => bots[k],
+            };
+            // T34: bots wear theirs painted
+            let lifelike = match kind {
+                "you" => g.lifelike,
+                "player" => crate::online::holds(n.lifelike, k),
+                _ => false,
+            };
+            let (x, feet_y) = screen(feet[k]);
+            let (_, head_y) = screen(feet[k].add(v3(0, fx::ONE * 19 / 10, 0)));
+            let note = match v.last {
+                Some((Some(w), _)) if w == k => s.get("card_winner"),
+                Some((_, scores)) => s.get("card_rounds").replace("{n}", &scores[k].to_string()),
+                None => String::new(),
+            };
+            let button = match kind {
+                "bot" if v.host => Some(action(g, "online.bot", &k.to_string(), "card_bot_off", false)),
+                "empty" if v.host => Some(action(g, "online.bot", &k.to_string(), "card_bot_on", false)),
+                _ => None,
+            };
+            Card {
+                id: format!("seat-{k}"),
+                heading: s.get("seat_n").replace("{n}", &(k + 1).to_string()),
+                who: s.get(&format!("seat_{kind}")),
+                kind: kind.into(),
+                skin: if empty { String::new() } else { skin_name(g, skin) },
+                note,
+                at: [x, head_y, feet_y],
+                action: button.map(|a| Action { small: true, ..a }),
+                // T26: your card picks your skin from all of them
+                pick: if kind == "you" {
+                    [("-1", "skin_prev"), ("1", "skin_next")]
+                        .iter()
+                        .map(|(step, label)| Action {
+                            small: true,
+                            ..action(g, "skin.step", step, label, false)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                picked: if kind == "you" {
+                    s.get("card_pick")
+                        .replace("{n}", &(g.skin as usize % crate::skins::COUNT + 1).to_string())
+                        .replace("{of}", &crate::skins::COUNT.to_string())
+                } else {
+                    String::new()
+                },
+                style: if empty {
+                    String::new()
+                } else {
+                    s.get(if lifelike {
+                        "style_lifelike"
+                    } else {
+                        "style_painted"
+                    })
+                },
+                // T34: your card also picks the style, painted or lifelike
+                style_pick: if kind == "you" {
+                    [
+                        ("-1", "style_painted", !lifelike),
+                        ("1", "style_lifelike", lifelike),
+                    ]
+                    .iter()
+                    .map(|(step, label, worn)| Action {
+                        small: true,
+                        enabled: !worn,
+                        ..action(g, "style.set", step, label, false)
+                    })
+                    .collect()
+                } else {
+                    Vec::new()
+                },
+            }
+        })
+        .collect()
+}
+
+fn panel(id: &str) -> Panel {
+    Panel {
+        id: id.into(),
+        heading: String::new(),
+        text: String::new(),
+        settings: Vec::new(),
+        actions: Vec::new(),
+        rows_heading: String::new(),
+        rows: Vec::new(),
+        fields: Vec::new(),
+        cards: Vec::new(),
+    }
+}
+
+/// The controls, as the pause shows them.
+pub const CONTROLS: &[(&str, &str)] = &[
+    ("key_move", "control_move"),
+    ("key_look", "control_look"),
+    ("key_fire", "control_fire"),
+    ("key_reload", "control_reload"),
+    ("key_guns", "control_guns"),
+    ("key_melee", "control_melee"),
+    ("key_alt", "control_alt"),
+    ("key_jump", "control_jump"),
+    ("key_crouch", "control_crouch"),
+    ("key_wall", "control_wall"),
+    ("key_vine", "control_vine"),
+    ("key_reset", "control_reset"),
+    ("key_pause", "control_pause"),
+];
+
+fn controls(g: &Game) -> Vec<Row> {
+    CONTROLS
+        .iter()
+        .map(|(k, d)| Row {
+            key: g.strings.get(k),
+            does: g.strings.get(d),
+        })
+        .collect()
+}
+
+pub fn settings(g: &Game) -> Vec<Setting> {
+    let step = |name: &str, minus: &str, plus: &str| {
+        vec![
+            action(g, name, "-1", minus, false),
+            action(g, name, "1", plus, false),
+        ]
+    };
+    vec![
+        Setting {
+            id: "fov".into(),
+            label: g.strings.get("setting_fov"),
+            value: g.strings.get("degrees").replace("{n}", &g.fov.to_string()),
+            actions: step("fov.step", "narrower", "wider"),
+        },
+        Setting {
+            id: "skin".into(),
+            label: g.strings.get("setting_skin"),
+            value: skin_name(g, g.skin),
+            actions: step("skin.step", "skin_prev", "skin_next"),
+        },
+        // T34: the skin's style, painted or lifelike
+        Setting {
+            id: "style".into(),
+            label: g.strings.get("setting_style"),
+            value: g.strings.get(if g.lifelike {
+                "style_lifelike"
+            } else {
+                "style_painted"
+            }),
+            actions: step("style.set", "style_painted", "style_lifelike"),
+        },
+        Setting {
+            id: "volume".into(),
+            label: g.strings.get("setting_volume"),
+            value: g.strings.get("percent").replace("{n}", &g.volume_pct.to_string()),
+            actions: step("volume.step", "quieter", "louder"),
+        },
+        Setting {
+            id: "filter".into(),
+            label: g.strings.get("setting_filter"),
+            value: g.strings.get(if g.filter { "filter_on" } else { "filter_off" }),
+            actions: step("filter.set", "filter_off", "filter_on"),
+        },
+        Setting {
+            id: "shake".into(),
+            label: g.strings.get("setting_shake"),
+            value: g.strings.get(if g.shake { "filter_on" } else { "filter_off" }),
+            actions: step("shake.set", "filter_off", "filter_on"),
+        },
+        Setting {
+            id: "skill".into(),
+            label: g.strings.get("setting_skill"),
+            value: g.strings.get(g.skill.key()),
+            actions: step("skill.step", "easier", "harder"),
+        },
+        Setting {
+            id: "look".into(),
+            label: g.strings.get("setting_look"),
+            value: g.strings.get("percent").replace("{n}", &g.look_pct.to_string()),
+            actions: step("look.step", "slower", "faster"),
+        },
+    ]
+}
+
+/// M5: a skin's name.
+pub fn skin_name(g: &Game, skin: u8) -> String {
+    g.strings
+        .get(&format!("skin_{}", skin as usize % crate::skins::COUNT))
+}
+
+/// M5: a seat as the HUD names it: "You", or its skin's name.
+fn who(g: &Game, seat: usize) -> String {
+    if seat == g.me() {
+        g.strings.get("you")
+    } else {
+        skin_name(g, g.view_world().players[seat].skin)
+    }
+}
+
+/// M5: the round's lines over play: the round and map, the scores, the
+/// count, the clock, who took the round or the match, and whom you watch
+/// while down; and from 75 s, where each other seat is, through walls.
+fn round_lines(g: &Game, playing: bool) -> Vec<Hud> {
+    use crate::rounds::Phase;
+    let w = g.view_world();
+    let Some(r) = w.rounds else { return Vec::new() };
+    let s = &g.strings;
+    let me = g.me();
+    let line = |id: &str, text: String, shown: bool| Hud {
+        id: id.into(),
+        text,
+        shown: shown && playing,
+        ..Hud::default()
+    };
+    let scores = (0..w.players.len())
+        .filter(|&k| !w.players[k].out)
+        .map(|k| {
+            s.get("hud_score")
+                .replace("{who}", &who(g, k))
+                .replace("{n}", &r.scores[k].to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let secs = r.ticks / 60;
+    let ended = match (r.phase, r.winner) {
+        (Phase::Over, Some(k)) if k == me => s.get("hud_round_you"),
+        (Phase::Over, Some(k)) => s.get("hud_round_won").replace("{who}", &who(g, k)),
+        (Phase::Over, None) => s.get("hud_round_none"),
+        (Phase::Done, Some(k)) if k == me => s.get("hud_match_you"),
+        (Phase::Done, Some(k)) => s.get("hud_match_won").replace("{who}", &who(g, k)),
+        _ => String::new(),
+    };
+    let mut out = vec![
+        line(
+            "round",
+            s.get("hud_round")
+                .replace("{n}", &r.round.to_string())
+                .replace("{map}", &s.get(w.map.name)),
+            true,
+        ),
+        line("scores", scores, true),
+        line("count", r.count_left().to_string(), r.phase == Phase::Count),
+        line(
+            "clock",
+            s.get("hud_clock")
+                .replace("{m}", &(secs / 60).to_string())
+                .replace("{ss}", &format!("{:02}", secs % 60)),
+            r.phase == Phase::Live,
+        ),
+        line("ended", ended.clone(), !ended.is_empty()),
+        line(
+            "watching",
+            s.get("hud_watching").replace("{who}", &who(g, g.eyes())),
+            r.phase == Phase::Live && g.eyes() != me,
+        ),
+    ];
+    // from 75 s: each other seat still standing, where it is on the screen
+    // (CS-Q18: C), whatever stands between
+    let cam = g.camera();
+    let m = cam.matrix(crate::render::Layer::Far, g.aspect);
+    for k in 0..4 {
+        let p = w.players.get(k);
+        let spot = p
+            .filter(|p| r.xray() && k != g.eyes() && p.alive())
+            .map(|p| m.project(p.eye(g.alpha).sub(cam.eye)))
+            .filter(|c| c[3] > 0)
+            .map(|c| {
+                let x = 5_000 + (c[0] as i64 * 5_000 / c[3] as i64) as i32;
+                let y = 5_000 - (c[1] as i64 * 5_000 / c[3] as i64) as i32;
+                [x, y]
+            })
+            .filter(|[x, y]| (0..=10_000).contains(x) && (0..=10_000).contains(y));
+        out.push(Hud {
+            id: format!("seen-{k}"),
+            text: String::new(),
+            shown: playing && spot.is_some(),
+            at: spot,
+            ..Hud::default()
+        });
+    }
+    out
+}
+
+/// The Pincel's charge, percent of full.
+fn charge_pct(a: &crate::arms::Arms) -> i32 {
+    let full = a.weapon.stats().charge.max(1);
+    a.charge * 100 / full
+}
+
+/// The lines over the play view: speed, wall jumps left, what the body is
+/// doing, the best speed, the hint, and (M2) health, the weapon, its rounds,
+/// a reload, the Pincel's charge, being down, and the hit and kill marks.
+pub fn hud(g: &Game) -> Vec<Hud> {
+    let playing = g.screen == Screen::Play;
+    let p = &g.view_world().players[g.me()];
+    let b = &p.body;
+    // the katana in hand allows a fourth (M3)
+    let left = (p.tuning().wall_jumps - b.wall_jumps).max(0);
+    let doing = if b.sliding {
+        "hud_sliding"
+    } else if b.slam_from.is_some() {
+        "hud_slamming"
+    } else if !b.on_ground {
+        "hud_air"
+    } else {
+        "hud_ground"
+    };
+    let line = |id: &str, text: String, shown: bool| Hud {
+        id: id.into(),
+        text,
+        shown,
+        ..Hud::default()
+    };
+    let full = |n: i32| n.clamp(0, world::HEALTH) * 10_000 / world::HEALTH;
+    let hurt = &p.hurt;
+    vec![
+        line(
+            "speed",
+            g.strings
+                .get("hud_speed")
+                .replace("{speed}", &world::speed_text(b.speed())),
+            playing,
+        ),
+        line(
+            "walls",
+            g.strings.get("hud_walls").replace("{n}", &left.to_string()),
+            playing,
+        ),
+        line("doing", g.strings.get(doing), playing),
+        line(
+            "top",
+            g.strings
+                .get("hud_top")
+                .replace("{speed}", &world::speed_text(p.top_speed)),
+            playing,
+        ),
+        line(
+            "hint",
+            g.strings.get("hint_play"),
+            playing && g.versus.is_none() && g.world.tick < 600,
+        ),
+        // R10.12: in a match, whose connection holds it up, or who left
+        line(
+            "connection",
+            match g.versus.as_ref().and_then(|v| v.notice(g.now_us)) {
+                Some(crate::versus::Notice::WaitingFor(k)) => {
+                    g.strings.get("online.waiting_for").replace("{who}", &who(g, k))
+                }
+                Some(crate::versus::Notice::Dropped(k)) => {
+                    g.strings.get("online.dropped").replace("{who}", &who(g, k))
+                }
+                _ => String::new(),
+            },
+            playing
+                && matches!(
+                    g.versus.as_ref().and_then(|v| v.notice(g.now_us)),
+                    Some(crate::versus::Notice::WaitingFor(_) | crate::versus::Notice::Dropped(_))
+                ),
+        ),
+        // M4: online, which seat is yours, for the match's first seconds
+        line(
+            "online",
+            g.strings
+                .get("hud_seat")
+                .replace("{n}", &(g.me() + 1).to_string()),
+            playing && g.in_match() && g.view_world().tick < 600,
+        ),
+        // M2: health, the gun and its rounds, reloading, the Pincel's charge
+        // T18: a bar, its lost part held a moment, jolting when hit and
+        // pulsing when low
+        Hud {
+            fill: Some(full(p.health)),
+            trail: Some(full(hurt.trail.max(p.health))),
+            tone: if hurt.jolted() {
+                Some("struck")
+            } else if p.alive() && p.health * 4 <= world::HEALTH {
+                Some("low")
+            } else {
+                None
+            },
+            ..line(
+                "health",
+                g.strings.get("hud_health").replace("{n}", &p.health.to_string()),
+                playing,
+            )
+        },
+        // T18: the screen's edges flush red when hit, and an arc round the
+        // crosshair points to the shooter: drawn, not read
+        Hud {
+            fill: Some(hurt.edge()),
+            ..line("hurt", String::new(), playing && hurt.edge() > 0)
+        },
+        {
+            let bearing = p.bearing(g.alpha);
+            Hud {
+                fill: Some(hurt.arc()),
+                turn: bearing,
+                ..line(
+                    "bearing",
+                    String::new(),
+                    playing && p.alive() && bearing.is_some(),
+                )
+            }
+        },
+        line("gun", g.strings.get(p.arms.weapon.stats().name), playing),
+        line(
+            "ammo",
+            g.strings
+                .get("hud_ammo")
+                .replace("{n}", &p.arms.rounds[p.arms.weapon as usize].to_string())
+                .replace("{of}", &p.arms.weapon.stats().magazine.to_string()),
+            // a melee weapon has no rounds
+            playing && p.arms.weapon.stats().magazine > 0,
+        ),
+        line(
+            "reload",
+            g.strings.get("hud_reloading"),
+            playing && p.arms.reloading > 0,
+        ),
+        line(
+            "charge",
+            g.strings
+                .get("hud_charge")
+                .replace("{n}", &charge_pct(&p.arms).to_string()),
+            playing && p.arms.charge > 0,
+        ),
+        line(
+            "dead",
+            g.strings.get("hud_dead"),
+            playing && !p.alive() && g.view_world().rounds.is_none(),
+        ),
+        // the hit mark and the kill mark round the crosshair: drawn, not read
+        line("mark", String::new(), playing && p.hit_mark > 0),
+        line("kill", String::new(), playing && p.kill_mark > 0),
+    ]
+    .into_iter()
+    .chain(round_lines(g, playing))
+    .collect()
+}
+
+pub fn ui(g: &Game) -> Ui {
+    let mut panels = Vec::new();
+    match g.screen {
+        Screen::Title => {
+            let mut p = panel("title");
+            p.heading = g.strings.get("title");
+            p.text = g.strings.get("tagline");
+            p.actions = vec![action(g, "title.begin", "", "begin", false)];
+            panels.push(p);
+        }
+        Screen::Menu => {
+            let mut p = panel("menu");
+            p.heading = g.strings.get("title");
+            p.text = g.strings.get("menu_text");
+            p.actions = vec![
+                action(g, "menu.practice", "", "practice", true),
+                action(g, "menu.duel", "", "duel", true),
+                action(g, "menu.bots", "", "bots_match", true),
+                action(g, "online.host", "", "host_match", false),
+                action(g, "online.join", "", "join_match", false),
+                action(g, "screen.playlists", "", "playlists", false),
+                action(g, "screen.settings", "", "settings", false),
+            ];
+            panels.push(p);
+        }
+        Screen::Play => {}
+        Screen::Paused => {
+            let mut p = panel("paused");
+            p.heading = g.strings.get("paused");
+            p.actions = if g.versus.is_some() {
+                // online: the match runs on behind the pause, and cannot be
+                // started again
+                vec![
+                    action(g, "play.resume", "", "resume", true),
+                    action(g, "screen.settings", "", "settings", false),
+                    action(g, "screen.menu", "", "leave", false),
+                ]
+            } else {
+                vec![
+                    action(g, "play.resume", "", "resume", true),
+                    action(g, "play.restart", "", "restart", true),
+                    action(g, "screen.settings", "", "settings", false),
+                    action(g, "screen.menu", "", "to_menu", false),
+                ]
+            };
+            p.rows_heading = g.strings.get("controls");
+            p.rows = controls(g);
+            panels.push(p);
+            // CS-Q22: A, the shooting card beside the pause
+            panels.push(shooting_panel(g));
+        }
+        Screen::Settings => {
+            let mut p = panel("settings");
+            p.heading = g.strings.get("settings");
+            p.settings = settings(g);
+            p.settings.extend(plan_settings(g));
+            p.actions = vec![action(g, "settings.back", "", "back", false)];
+            panels.push(p);
+        }
+        Screen::Playlists => panels.extend(playlist_panels(g)),
+        Screen::Online => {
+            panels.push(online_panel(g));
+            // CS-Q22: A, and after an online match
+            if g.versus
+                .as_ref()
+                .is_some_and(|v| v.ended() && v.session().is_some())
+            {
+                panels.push(shooting_panel(g));
+            }
+        }
+    }
+    Ui {
+        title: g.strings.get("title"),
+        screen: g.screen.name().into(),
+        panels,
+        hud: hud(g),
+        capture: g.capture(),
+        hints: g
+            .glossary
+            .iter()
+            .map(|e| Hint {
+                term: e.term.clone(),
+                definition: e.definition.clone(),
+            })
+            .collect(),
+        no_webgl: g.strings.get("no_webgl"),
+        saved: g.saved(),
+        online: OnlineView {
+            cmds: g.cmds.clone(),
+            status: g.versus.as_ref().map(|v| v.status()).unwrap_or("").into(),
+            sums: g
+                .versus
+                .as_ref()
+                .and_then(|v| v.session())
+                .map(|s| {
+                    s.made
+                        .iter()
+                        .map(|(t, sum)| format!("{t}:{sum:x}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default(),
+        },
+    }
+}
+
+/// A screen, setting or flag: the new view model, or the error.
+pub fn act(g: &mut Game, name: &str, value: &str) -> String {
+    match g.act(name, value) {
+        Ok(()) => ok(&ui(g)),
         Err(e) => error(e),
     }
+}
+
+/// Sizes and layout the page needs to upload and draw: every stride, offset,
+/// bit, pass state and uniform name, so the page holds no layout of its own.
+pub fn numbers() -> String {
+    let b = render::BYTES_PER_VALUE;
+    let vec4 = 4 * b;
+    serde_json::json!({
+        "actions": input::ACTIONS.iter().map(|(n, bit)| (n.to_string(), serde_json::json!(bit))).collect::<serde_json::Map<_, _>>(),
+        "vertex": {
+            "stride": prim::VERTEX_VALUES * b,
+            "attributes": [["aPos", 3, 0], ["aNormal", 3, 3 * b], ["aColor", 3, 6 * b]],
+        },
+        "instance": {
+            "stride": render::INSTANCE_VALUES * b,
+            "attributes": [["iA", 4, 0], ["iB", 4, vec4], ["iC", 4, 2 * vec4], ["iD", 4, 3 * vec4]],
+        },
+        "draw_values": render::DRAW_VALUES,
+        "buffers": { "static": render::STATIC_BUFFER, "dynamic": render::DYNAMIC_BUFFER },
+        "passes": render::pass_states(),
+        "uniforms": look::UNIFORMS.iter().chain(crate::sky::UNIFORMS).map(|(n, call, len)| serde_json::json!([n, call, len, call.contains("Matrix")])).collect::<Vec<_>>(),
+        "view": { "layers": [[0, 16], [16, 32], [32, 48]], "eye": [48, 51], "origin": [51, 54] },
+        // T34: a lifelike figure's record (lifelike.rs), and each skin's
+        // model by `skins::SKINS` order
+        "actor": {
+            "values": crate::lifelike::VALUES,
+            "model": 0,
+            "lower": [1, 2, 3],
+            "upper": [4, 5, 6],
+            "matrix": [crate::lifelike::MATRIX, crate::lifelike::MATRIX + 12],
+            "flash": crate::lifelike::FLASH,
+            "flash_rgb": [crate::lifelike::FLASH + 1, crate::lifelike::FLASH + 4],
+            "models": crate::skins::SKINS.iter().map(|s| s.model()).collect::<Vec<_>>(),
+            // drawn in the far and near layers, never the eye's
+            "layers": [render::Layer::Far as u32, render::Layer::Near as u32],
+        },
+        // T15: the painted filter, drawn over the whole screen from the scene
+        // as a picture: two triangles' corners, and the filter's uniforms
+        "post": {
+            "attribute": ["aCorner", 2],
+            "corners": [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1],
+            "vertices": 6,
+            "uniforms": [
+                ["uFilter", "uniform4fv", [FILTER_HEIGHT_PER_RADIUS, FILTER_MOST_RADIUS, 0, 0]],
+                ["uLuma", "uniform3fv", LUMA],
+            ],
+        },
+    })
+    .to_string()
+}
+
+/// T15: the painted filter's reach, a pixel for every this many of the
+/// screen's height (5 at 540, 8 at 1080 and above), and its most.
+pub const FILTER_HEIGHT_PER_RADIUS: i32 = 108;
+pub const FILTER_MOST_RADIUS: i32 = 8;
+/// T15: how much red, green and blue count toward brightness, the filter's
+/// measure of how much a patch varies (Rec. 601, in thousandths).
+pub const LUMA: [i32; 3] = [299, 587, 114];
+
+/// Every mesh to upload, by number, with its vertex count.
+pub fn meshes(g: &Game) -> String {
+    let list: Vec<serde_json::Value> = (0..g.meshes.count() as u32)
+        .map(|id| {
+            let n = g.meshes.vertices(MeshId(id)).len() / prim::VERTEX_VALUES;
+            serde_json::json!({ "id": id, "vertices": n })
+        })
+        .collect();
+    serde_json::Value::Array(list).to_string()
+}
+
+pub fn mesh(g: &Game, id: u32) -> Vec<i32> {
+    g.meshes.vertices(MeshId(id))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const STRINGS: &str = r#"{"title": "T", "intro": "I"}"#;
-    const GLOSSARY: &str = "### Spout\n\nWhere slush comes out.\n";
-
-    fn json(text: &str) -> serde_json::Value {
-        serde_json::from_str(text).unwrap()
+    fn game() -> Game {
+        Game::new(
+            include_str!("../../../data/strings.json"),
+            include_str!("../../../GLOSSARY.md"),
+            include_str!("../../../data/look.json"),
+            1,
+        )
+        .unwrap()
     }
 
     #[test]
-    fn start_returns_the_start_screen_with_its_panel_and_hints() {
-        let v = json(&start(STRINGS, GLOSSARY));
-        assert_eq!(v["ok"]["screen"], "start");
-        assert_eq!(v["ok"]["title"], "T");
-        assert_eq!(v["ok"]["panels"][0]["id"], "intro");
-        assert_eq!(v["ok"]["panels"][0]["text"], "I");
-        assert_eq!(v["ok"]["hints"][0]["term"], "Spout");
-        assert_eq!(v["ok"]["hints"][0]["definition"], "Where slush comes out.");
+    fn the_hud_reads_the_speed_and_the_wall_jumps_left_only_in_play() {
+        let mut g = game();
+        assert!(hud(&g).iter().all(|h| !h.shown));
+        g.act("menu.practice", "").unwrap();
+        g.world.players[0].body.velocity = crate::geom::v3(crate::fx::int(17), 0, crate::fx::int(3));
+        g.world.players[0].body.wall_jumps = 1;
+        let h = hud(&g);
+        // √(17² + 3²) = 17.26
+        assert_eq!(h[0].text, "17.3 m/s");
+        assert_eq!(h[1].text, "Wall jumps: 2");
+        assert!(h[0].shown && h[1].shown);
     }
 
     #[test]
-    fn start_wraps_a_bad_strings_file_in_error() {
-        assert_eq!(
-            start(r#"{"title": "", "intro": "I"}"#, ""),
-            r#"{"error":"The strings file has an empty \"title\"."}"#
-        );
+    fn the_hud_names_the_gun_and_counts_its_rounds() {
+        let mut g = game();
+        g.act("menu.practice", "").unwrap();
+        g.world.players[0].arms.rounds[0] = 3;
+        let h = hud(&g);
+        let line = |id: &str| h.iter().find(|l| l.id == id).unwrap().clone();
+        assert_eq!(line("gun").text, "Service pistol");
+        assert_eq!(line("ammo").text, "3 / 8");
+        assert!(!line("reload").shown && !line("mark").shown);
+        g.world.players[0].hit_mark = 4;
+        assert!(hud(&g).iter().find(|l| l.id == "mark").unwrap().shown);
     }
 
     #[test]
-    fn start_wraps_a_bad_glossary_in_error() {
-        let v = json(&start(STRINGS, "### Spout\n"));
-        assert_eq!(v["error"], "The glossary entry \"Spout\" has no definition.");
+    fn with_a_katana_the_hud_hides_the_rounds_and_counts_four_wall_jumps() {
+        let mut g = game();
+        g.act("menu.practice", "").unwrap();
+        g.world.players[0].arms.weapon = crate::weapons::Weapon::Katana;
+        let h = hud(&g);
+        let line = |id: &str| h.iter().find(|l| l.id == id).unwrap().clone();
+        assert_eq!(line("gun").text, "Katana");
+        assert!(!line("ammo").shown, "a melee weapon has no rounds");
+        assert_eq!(line("walls").text, "Wall jumps: 4");
     }
 
     #[test]
-    fn act_goes_through_the_one_door() {
-        let first = json(&start(STRINGS, ""));
-        let state = first["ok"]["state"].to_string();
-        let v = json(&act(&state, "", "screen.show", "start"));
-        assert_eq!(v["ok"]["screen"], "start");
+    fn act_answers_with_the_view_model_or_the_error() {
+        let mut g = game();
+        let v: serde_json::Value = serde_json::from_str(&act(&mut g, "title.begin", "")).unwrap();
+        assert_eq!(v["ok"]["screen"], "menu");
+        let e: serde_json::Value = serde_json::from_str(&act(&mut g, "nonsense", "")).unwrap();
+        assert_eq!(e["error"], "Unknown action \"nonsense\".");
     }
 
     #[test]
-    fn act_refuses_an_unknown_action_and_screen_by_name() {
-        let first = json(&start(STRINGS, ""));
-        let state = first["ok"]["state"].to_string();
-        let v = json(&act(&state, "", "screen.jump", "start"));
-        assert_eq!(v["error"], "Unknown action \"screen.jump\".");
-        let v = json(&act(&state, "", "screen.show", "nowhere"));
-        assert_eq!(v["error"], "There is no screen \"nowhere\".");
+    fn the_pause_lists_every_control_and_lets_go_of_the_pointer() {
+        let mut g = game();
+        g.act("menu.practice", "").unwrap();
+        g.act("key.escape", "").unwrap();
+        let u = ui(&g);
+        assert_eq!(u.panels[0].rows.len(), CONTROLS.len());
+        assert!(!u.capture);
     }
 }
