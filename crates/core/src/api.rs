@@ -144,7 +144,7 @@ pub struct Panel {
     /// Choomstar: the mission list's entries
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub entries: Vec<crate::chart::Entry>,
-    /// Choomstar: a picture beside the panel (a file under web/art/) and
+    /// Choomstar: a picture beside the panel (a file under assets/art/, served at art/) and
     /// its words for a reader who cannot see it
     #[serde(skip_serializing_if = "String::is_empty")]
     pub picture: String,
