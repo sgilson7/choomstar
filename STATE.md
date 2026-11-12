@@ -2,7 +2,7 @@
 
 The project's long-term memory, at most two pages. Rewrite it at each milestone (a stage boundary, a finished feature, a deploy) and before a handoff. After a compaction or in a new session, read this file and ask `tools/ask.py` for cards; do not re-read files it already summarises. `scripts/context_check.py` checks its size, its commit and the cards it cites.
 
-Commit: dc3b8c2
+Commit: 19e8073
 
 ## Where the build is
 
@@ -15,6 +15,8 @@ Code (card:mine for details):
 - mission.rs: pack (include_str data/missions.json), open/medal_for/record/route_from/chart_at, Run with Parts (Targets, Course, Horde, Duel, Team, Arena, Boss, Salvage; gauntlet = list of parts), foes as dummy clusters (R2.6), zombies = melee bots (R2.7).
 - chart.rs: view model (Chart, Entry, MedalMark), mission/results panels, mission HUD lines. game.rs: Screen::Missions/Results, acts menu.missions, mission.pick/start/retry/next, results.chart, save.load; Backspace restarts (R2.9).
 - web/app.js draws the chart SVG and the list; style.css chrome theme.
+
+Since dc3b8c2 (person's fixes, all live): Tobogán gates follow map routes (R2.11); 3 s count + 4 s round-end banner (R2.12, mission.rs waiting()); after gold the chart is first (R2.13); long jumps (R2.14): courses.rs (4 courses, space look via look.json `space`, Game.look_version → page resends uniforms), Part::LongJump, missions 51-54, 12 kinds.
 
 ## What is next
 
