@@ -71,11 +71,18 @@ m(48,"gauntlet_two","Gauntlet II","gauntlet","catedral","any",["40","35","36","3
 # --- tier 6: the finale and the secret
 m(49,"interdictor","The Interdictor","boss","catedral","any",["45","44","43","42","41","48"],{"kind":"defeat_boss"},"time",480,320,220,[{"boss":"bailiff"}],"Long Time Comin's first judge. Three phases; it calls moths, lanterns, wardens and drifters.")
 m(50,"choomstar","Choomstar","gauntlet","cubo","any",["49","45:gold","28:gold","37:gold","40:gold","48:gold"],{"kind":"gauntlet","stages":4,"repairs":2},"health",1,30,60,[{"boss":"black_knight"},{"boss":"section_chief"},{"boss":"great_horned"},{"boss":"bailiff"}],"Every boss, one after another. Shown only once the Interdictor falls.",secret=True,row=7)
+# --- long jumps (the person, 2026-11-12): courses of their own in open space, after
+# Ape Race's Sector Ape; scored by the distance gone along the course and the jump off its
+# lip into the field below. Silver is the lip; gold only with a good jump past it.
+m(51,"launch_rail","Launch Rail","longjump","rail","none",["2"],{"kind":"long_jump","limit":60},"distance",90,176,246,[],"One long surf trough, a lip, and the field 40 m below. Hold the surf, leave it fast.")
+m(52,"debris_field","Debris Field","longjump","debris","none",["51","7"],{"kind":"long_jump","limit":90},"distance",110,224,274,[],"Hop the weaving debris down, surf the trough, hop again, then the lip.")
+m(53,"wreck_vines","Wreck Vines","longjump","wreck","none",["52","16","51"],{"kind":"long_jump","limit":90},"distance",100,201,251,[],"Two gaps too long to jump. Swing the wreck's vines across (F), then the lip.")
+m(54,"sector_ape","Sector Ape","longjump","sector","none",["53","25","16","52"],{"kind":"long_jump","limit":150},"distance",230,462,542,[],"Everything at once, over a long way down: troughs, debris, vines and the biggest lip.")
 
 ids = {x["n"]: x for x in M}
 def tier(x): return x.get("row", len(x["requires"]))
 problems = []
-assert len(M) == 50, len(M)
+assert len(M) == 54, len(M)
 for x in M:
     for r in x["requires"]:
         k = int(r.split(":")[0])

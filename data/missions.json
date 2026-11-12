@@ -2080,6 +2080,130 @@
    "brief": "Every boss, one after another. Shown only once the Interdictor falls.",
    "secret": true,
    "row": 7
+  },
+  {
+   "id": "launch_rail",
+   "name": "Launch Rail",
+   "kind": "longjump",
+   "map": "rail",
+   "loadout": "none",
+   "requires": [
+    {
+     "mission": "plaza_run",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "long_jump",
+    "limit": 60
+   },
+   "medals": {
+    "measure": "distance",
+    "bronze": 90,
+    "silver": 176,
+    "gold": 246
+   },
+   "foes": [],
+   "brief": "One long surf trough, a lip, and the field 40 m below. Hold the surf, leave it fast."
+  },
+  {
+   "id": "debris_field",
+   "name": "Debris Field",
+   "kind": "longjump",
+   "map": "debris",
+   "loadout": "none",
+   "requires": [
+    {
+     "mission": "launch_rail",
+     "medal": "bronze"
+    },
+    {
+     "mission": "toboggan",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "long_jump",
+    "limit": 90
+   },
+   "medals": {
+    "measure": "distance",
+    "bronze": 110,
+    "silver": 224,
+    "gold": 274
+   },
+   "foes": [],
+   "brief": "Hop the weaving debris down, surf the trough, hop again, then the lip."
+  },
+  {
+   "id": "wreck_vines",
+   "name": "Wreck Vines",
+   "kind": "longjump",
+   "map": "wreck",
+   "loadout": "none",
+   "requires": [
+    {
+     "mission": "debris_field",
+     "medal": "bronze"
+    },
+    {
+     "mission": "wall_to_wall",
+     "medal": "bronze"
+    },
+    {
+     "mission": "launch_rail",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "long_jump",
+    "limit": 90
+   },
+   "medals": {
+    "measure": "distance",
+    "bronze": 100,
+    "silver": 201,
+    "gold": 251
+   },
+   "foes": [],
+   "brief": "Two gaps too long to jump. Swing the wreck's vines across (F), then the lip."
+  },
+  {
+   "id": "sector_ape",
+   "name": "Sector Ape",
+   "kind": "longjump",
+   "map": "sector",
+   "loadout": "none",
+   "requires": [
+    {
+     "mission": "wreck_vines",
+     "medal": "bronze"
+    },
+    {
+     "mission": "sierra_ascent",
+     "medal": "bronze"
+    },
+    {
+     "mission": "wall_to_wall",
+     "medal": "bronze"
+    },
+    {
+     "mission": "debris_field",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "long_jump",
+    "limit": 150
+   },
+   "medals": {
+    "measure": "distance",
+    "bronze": 230,
+    "silver": 462,
+    "gold": 542
+   },
+   "foes": [],
+   "brief": "Everything at once, over a long way down: troughs, debris, vines and the biggest lip."
   }
  ]
 }

@@ -18,6 +18,7 @@ pub mod api;
 pub mod arms;
 pub mod camera;
 pub mod chart;
+pub mod courses;
 pub mod flicker;
 pub mod fx;
 pub mod game;

@@ -98,6 +98,12 @@ impl Game {
         floats(tool_core::sky::all_uniforms(&self.inner.look))
     }
 
+    /// Changes when the look does (a long-jump course's space): the page
+    /// sends the sky's uniforms again.
+    pub fn look_version(&self) -> u32 {
+        self.inner.look_version
+    }
+
     pub fn clear_color(&self) -> Vec<f32> {
         floats(self.inner.look.clear_color())
     }

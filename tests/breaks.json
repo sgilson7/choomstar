@@ -2700,5 +2700,12 @@
   "find": "    p.actions = if o.medal == GOLD {",
   "replace": "    p.actions = if o.medal == 99 {",
   "test": "after_a_gold_the_first_button_is_the_chart_and_otherwise_try_again"
+ },
+ {
+  "name": "CM a long jump counts the jump past the lip",
+  "file": "crates/core/src/mission.rs",
+  "find": "                    self.done = j.length + jumped;",
+  "replace": "                    self.done = j.length;",
+  "test": "a_long_jump_scores_the_course_gone_and_the_jump_past_its_lip"
  }
 ]

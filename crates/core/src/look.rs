@@ -209,6 +209,30 @@ pub const MATERIALS: usize = 8;
 const MATERIALS_PER_MATRIX: usize = 4;
 
 impl Look {
+    /// Choomstar: the look with its `space` keys laid over it (the
+    /// long-jump courses), each replacing the one above; `palette`'s keys
+    /// one by one.
+    pub fn parse_space(json: &str) -> Result<Look, String> {
+        let mut all: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| format!("The look file could not be read: {e}"))?;
+        let space = all.get("space").cloned().unwrap_or_default();
+        if let (Some(over), Some(base)) = (space.as_object(), all.as_object_mut()) {
+            for (k, v) in over {
+                match (base.get_mut(k), v.as_object()) {
+                    (Some(serde_json::Value::Object(b)), Some(o)) => {
+                        for (kk, vv) in o {
+                            b.insert(kk.clone(), vv.clone());
+                        }
+                    }
+                    _ => {
+                        base.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        Look::parse(&all.to_string())
+    }
+
     pub fn parse(json: &str) -> Result<Look, String> {
         let l: Look =
             serde_json::from_str(json).map_err(|e| format!("The look file could not be read: {e}"))?;
@@ -338,6 +362,18 @@ impl Look {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn the_space_look_lays_its_keys_over_the_ground_look() {
+        let text = include_str!("../../../data/look.json");
+        let (g, s) = (Look::parse(text).unwrap(), Look::parse_space(text).unwrap());
+        assert_eq!(s.zenith, [4, 6, 16]);
+        assert_eq!(s.palette.trim, [127, 211, 255]);
+        // what space leaves alone stays the ground's
+        assert_eq!(s.palette.straw, g.palette.straw);
+        assert_eq!(s.sun_toward, g.sun_toward);
+        assert_ne!(s.zenith, g.zenith);
+    }
 
     #[test]
     fn the_grit_reaches_the_shader_in_metres_and_shares_with_one_column_a_material() {

@@ -317,5 +317,13 @@
   "medals_earned": "{n} of {of} medals",
   "results_text": "{name}: {why}",
   "diver_alt": "The diver in a copper helmet and grey suit",
-  "hud_stage_cleared": "Fight {n} of {of} cleared"
+  "hud_stage_cleared": "Fight {n} of {of} cleared",
+  "kind_longjump": "Long jump",
+  "goal_long_jump": "Go as far along the course as you can; the lip is {n} m along. Gold only with a long jump off it.",
+  "hud_distance": "{n} m of {lip} m to the lip",
+  "mark_distance": "{medal}: {n} m",
+  "best_distance": "{n} m, {medal}",
+  "score_distance": "{n} m",
+  "mission.landed": "You landed on the field.",
+  "mission.fell": "You fell off the course."
 }

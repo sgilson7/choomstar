@@ -481,6 +481,7 @@ async function main() {
 
   let staticVersion = 0;
   let uiVersion = 0;
+  let lookVersion = game.look_version();
   function frame(now) {
     if (stopped) return;
     try {
@@ -497,6 +498,11 @@ async function main() {
     if (!lost && game.static_version() !== staticVersion) {
       staticVersion = game.static_version();
       renderer.setStatic(game.static_values());
+    }
+    // Choomstar: a long-jump course's space look: the sky sent again
+    if (!lost && game.look_version() !== lookVersion) {
+      lookVersion = game.look_version();
+      renderer.setUniforms(game.uniforms(), game.clear_color());
     }
     if (!lost) renderer.want(game.wanted());
     if (!lost) renderer.frame(game.view(), game.instances(), game.draws(), game.filter(), game.actors());

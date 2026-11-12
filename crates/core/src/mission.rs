@@ -77,8 +77,9 @@ pub const WEAPONS: [&str; crate::weapons::COUNT] = [
 ];
 
 /// The kinds, in the chart's spoke order (the journal's star chart).
-pub const KINDS: [&str; 11] = [
-    "targets", "fixed", "combat", "melee", "team", "horde", "salvage", "arena", "boss", "gauntlet", "parkour",
+pub const KINDS: [&str; 12] = [
+    "targets", "fixed", "combat", "melee", "team", "horde", "salvage", "arena", "boss", "gauntlet",
+    "parkour", "longjump",
 ];
 
 pub const NONE: u8 = 0;
@@ -97,6 +98,11 @@ const TAKE_REACH: Fx = ONE * 15 / 10;
 const LIFT_REACH: Fx = fx::int(3);
 /// Standing on the open lift empty-handed this long takes it.
 const LIFT_TICKS: i32 = 90;
+/// A long jump's field is marked every this many metres past the lip, this
+/// far, by lines this wide.
+const MARK_EVERY: i32 = 10;
+const MARKS_PAST_LIP: i32 = 200;
+const MARK_WIDE: i32 = 60;
 /// A repair cell's health.
 const REPAIR: i32 = 35;
 /// How far apart (m) placed things are kept, and how far from the spawn.
@@ -433,6 +439,17 @@ pub enum Part {
     },
     Boss,
     Salvage,
+    /// a long-jump course: how far along it you go, and the jump off its lip
+    LongJump,
+}
+
+/// A long-jump course's numbers, as its mission reads them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Jump {
+    pub start_z: Fx,
+    pub lip: V3,
+    pub field_y: Fx,
+    pub length: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -469,6 +486,9 @@ pub struct Run {
     pub breather: i32,
     pub repairs: i32,
     pub repair: Option<V3>,
+    /// a long-jump course's numbers, and where you landed past its lip (m)
+    pub jump: Option<Jump>,
+    pub landed: Option<i32>,
     pub boss: Option<usize>,
     /// ticks left of the count before play, and of a round's end shown,
     /// with what it says and what comes after
@@ -492,6 +512,26 @@ impl Run {
         w.dummies.clear();
         w.players.truncate(1);
         w.start_round(spec.map_index());
+        // a long-jump course is a map of its own (courses.rs)
+        let jump = crate::courses::is_course(&spec.map).then(|| {
+            let c = crate::courses::course(&spec.map);
+            let j = Jump {
+                start_z: c.start_z,
+                lip: c.lip,
+                field_y: c.field_y,
+                length: c.length,
+            };
+            w.nav = Some(std::rc::Rc::new(crate::nav::Nav::of(&c.map)));
+            w.turned = std::rc::Rc::new(Vec::new());
+            w.pickups.clear();
+            let spawn = c.map.spawns[0];
+            w.map = std::rc::Rc::new(c.map);
+            let p = &mut w.players[0];
+            p.spawn = spawn;
+            p.respawn();
+            p.prev = p.body.origin;
+            j
+        });
         let team = spec.kind == "team";
         w.rules = Rules {
             hunt: true,
@@ -555,6 +595,7 @@ impl Run {
                     (_, "clear_waves") => Part::Arena { waves: g.waves },
                     (_, "defeat_boss") => Part::Boss,
                     (_, "salvage") => Part::Salvage,
+                    (_, "long_jump") => Part::LongJump,
                     _ => Part::Duel,
                 };
                 vec![(part, spec.foes.clone())]
@@ -591,12 +632,14 @@ impl Run {
             breather: 0,
             repairs: spec.goal.repairs,
             repair: None,
+            landed: None,
             boss: None,
             count: COUNT_TICKS,
             over: 0,
             banner: None,
             next: Next::Round,
             alive_was: vec![true],
+            jump,
             rng: Rng::new(0x4348_4f4f_u64 ^ (k as u64).wrapping_mul(0x9e37_79b9)),
         };
         run.begin_part(&mut w);
@@ -890,6 +933,9 @@ impl Run {
                     self.boss = Some(self.foes.len() - 1);
                 }
             }
+            Part::LongJump => {
+                self.need = spec.medals.silver;
+            }
             Part::Salvage => {
                 let n = spec.goal.relics.max(1) as usize;
                 self.relics = self.spread(n, me).into_iter().map(|p| (p, false)).collect();
@@ -966,6 +1012,7 @@ impl Run {
         match self.spec().medals.measure.as_str() {
             "health" => w.players[0].health.max(0),
             "relics" => self.delivered,
+            "distance" => self.done,
             _ => self.ticks,
         }
     }
@@ -1055,7 +1102,9 @@ impl Run {
         // the time allowed
         if spec.limit() > 0 && self.ticks > spec.limit() * SECOND {
             let s = self.score_now(w);
-            if *self.current() == Part::Salvage && self.delivered >= self.need {
+            if *self.current() == Part::Salvage && self.delivered >= self.need
+                || *self.current() == Part::LongJump && self.done >= spec.medals.bronze
+            {
                 self.end(true, s, "mission.cleared");
             } else {
                 self.end(false, s, "mission.out_of_time");
@@ -1066,7 +1115,7 @@ impl Run {
         // (where it loses the round)
         let mine_down = !w.players[0].alive();
         let part = self.current().clone();
-        if mine_down && part != Part::Team && part != Part::Duel {
+        if mine_down && part != Part::Team && part != Part::Duel && part != Part::LongJump {
             self.end(false, 0, "mission.felled");
             return;
         }
@@ -1373,6 +1422,31 @@ impl Run {
                     self.part_done(w);
                 }
             }
+            Part::LongJump => {
+                let Some(j) = self.jump else { return };
+                let p = &w.players[0];
+                let at = p.body.origin;
+                let m = |v: Fx| v / ONE;
+                if at.z > j.lip.z {
+                    // how far along the course, while still on it
+                    if at.y > j.field_y + ONE * 2 && !mine_down {
+                        self.done = self.done.max(m(j.start_z - at.z).clamp(0, j.length));
+                    }
+                } else if p.body.on_ground && at.y < j.lip.y - fx::int(5) {
+                    // landed on the field: the course and the jump past its lip
+                    let jumped = m(j.lip.z - at.z);
+                    self.landed = Some(jumped);
+                    self.done = j.length + jumped;
+                    let cleared = self.done >= spec.medals.bronze;
+                    self.end(cleared, self.done, "mission.landed");
+                    return;
+                }
+                if mine_down || at.y < j.field_y - ONE * 2 {
+                    let cleared = self.done >= spec.medals.bronze;
+                    let s = self.done;
+                    self.end(cleared, s, "mission.fell");
+                }
+            }
             Part::Salvage => {
                 self.horde(w, &felled);
                 for (p, taken) in self.relics.iter_mut() {
@@ -1531,6 +1605,24 @@ impl Run {
                 ONE * 3 / 4,
             );
         }
+        // a long jump's field: a line across it every 10 m past the lip,
+        // the gold mark in gold, and the lip itself in cyan
+        if let Some(j) = self.jump {
+            let past_gold = self.spec().medals.gold - j.length;
+            for d in (0..=MARKS_PAST_LIP).step_by(MARK_EVERY as usize) {
+                let (colour, strength) = if d == 0 {
+                    (cyan, ONE)
+                } else if d == past_gold / MARK_EVERY * MARK_EVERY {
+                    (gold, ONE)
+                } else {
+                    (rgb(pal.steel), ONE / 3)
+                };
+                let y = if d == 0 { j.lip.y } else { j.field_y };
+                let at = Affine::translate(v3(0, y + ONE / 20, j.lip.z - fx::int(d)))
+                    .then(&Affine::scale(v3(fx::int(MARK_WIDE), ONE / 20, ONE * 3 / 10)));
+                out.glow(Mesh::Cube, at, colour, strength);
+            }
+        }
         if let Some(r) = self.repair {
             let at = Affine::translate(r.add(v3(0, ONE * 8 / 10, 0)))
                 .then(&Affine::rot_y(fx::mul(moment, fx::deg(2))))
@@ -1600,13 +1692,18 @@ mod tests {
     #[test]
     fn the_pack_holds_fifty_missions_and_every_requirement_points_to_a_lower_tier() {
         let p = pack();
-        assert_eq!(p.missions.len(), 50);
+        assert_eq!(p.missions.len(), 54);
         for m in &p.missions {
             for r in &m.requires {
                 let q = index(&r.mission).unwrap_or_else(|| panic!("{} requires {}", m.id, r.mission));
                 assert!(p.missions[q].tier() < m.tier(), "{} requires {}", m.id, r.mission);
             }
-            assert!(MAPS.contains(&m.map.as_str()), "{} on {}", m.id, m.map);
+            assert!(
+                MAPS.contains(&m.map.as_str()) || crate::courses::is_course(&m.map),
+                "{} on {}",
+                m.id,
+                m.map
+            );
             assert!(KINDS.contains(&m.kind.as_str()), "{} is {}", m.id, m.kind);
             assert!(
                 m.loadout == "any" || m.loadout == "none" || weapon(&m.loadout).is_some(),
@@ -1826,6 +1923,54 @@ mod tests {
     }
 
     #[test]
+    fn a_long_jump_scores_the_course_gone_and_the_jump_past_its_lip() {
+        // launch_rail: the lip 176 m along; bronze 90, silver 176, gold 246
+        let k = index("launch_rail").unwrap();
+        let (mut run, mut w) = begin(k, 0, false);
+        let j = run.jump.unwrap();
+        assert_eq!(j.length, 176);
+        assert_eq!(w.map.name, "course_rail");
+        // 100 m along the course, still on it
+        w.players[0].body.origin = v3(0, j.lip.y + fx::int(20), j.start_z - fx::int(100));
+        run.step(&mut w, crate::input::FORWARD);
+        assert_eq!(run.done, 100);
+        assert!(run.outcome.is_none());
+        // landed on the field 75 m past the lip: 176 + 75 = 251, gold
+        w.players[0].body.origin = v3(0, j.field_y, j.lip.z - fx::int(75));
+        w.players[0].body.on_ground = true;
+        run.step(&mut w, crate::input::FORWARD);
+        let o = run.outcome.unwrap();
+        assert_eq!((o.cleared, o.score, o.medal), (true, 251, GOLD));
+        assert_eq!(run.landed, Some(75));
+    }
+
+    #[test]
+    fn a_long_jump_reaching_the_lip_with_no_jump_past_it_earns_silver_at_most() {
+        let k = index("launch_rail").unwrap();
+        let (mut run, mut w) = begin(k, 0, false);
+        let j = run.jump.unwrap();
+        // landed at the lip's foot
+        w.players[0].body.origin = v3(0, j.field_y, j.lip.z);
+        w.players[0].body.on_ground = true;
+        run.step(&mut w, crate::input::FORWARD);
+        assert_eq!(run.outcome.map(|o| (o.score, o.medal)), Some((176, SILVER)));
+    }
+
+    #[test]
+    fn falling_off_a_long_jump_course_scores_how_far_you_got() {
+        let k = index("launch_rail").unwrap();
+        let (mut run, mut w) = begin(k, 0, false);
+        let j = run.jump.unwrap();
+        w.players[0].body.origin = v3(0, j.lip.y, j.start_z - fx::int(60));
+        run.step(&mut w, crate::input::FORWARD);
+        // off the side, below the field's height
+        w.players[0].body.origin = v3(fx::int(30), j.field_y - fx::int(5), j.start_z - fx::int(70));
+        run.step(&mut w, crate::input::FORWARD);
+        let o = run.outcome.unwrap();
+        assert_eq!((o.cleared, o.score, o.why), (false, 60, "mission.fell"));
+    }
+
+    #[test]
     fn a_horde_sends_zombies_on_their_own_side_at_a_shamblers_pace() {
         let (run, w) = play(index("doors_open").unwrap(), 4 * SECOND);
         let z: Vec<&Player> = (1..w.players.len())
@@ -1937,6 +2082,12 @@ mod tests {
                         w.players[0].body.origin = *g;
                     }
                 }
+                Part::LongJump => {
+                    // down onto the field, as far past the lip as gold asks
+                    let j = run.jump.unwrap();
+                    let past = run.spec().medals.gold - j.length + 1;
+                    w.players[0].body.origin = v3(0, j.field_y, j.lip.z - fx::int(past));
+                }
                 Part::Salvage => {
                     w.players[0].body.origin = match run.relics.get(relic) {
                         Some((p, _)) => {
@@ -1971,7 +2122,12 @@ mod tests {
     fn every_mission_starts_on_its_map_with_somewhere_to_walk() {
         for (k, m) in pack().missions.iter().enumerate() {
             let (run, w) = Run::start(k, 0, false);
-            assert_eq!(w.map.name, format!("map_{}", m.map), "{}", m.id);
+            let name = if crate::courses::is_course(&m.map) {
+                "course"
+            } else {
+                "map"
+            };
+            assert_eq!(w.map.name, format!("{name}_{}", m.map), "{}", m.id);
             assert!(run.spots.len() > 20, "{} has {} places", m.id, run.spots.len());
         }
     }

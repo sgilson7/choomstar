@@ -759,5 +759,77 @@
         108
       ]
     }
+  },
+  "_space": "Choomstar: the long-jump courses' look, laid over the rest (each key replaces the one above; palette's keys one by one), after Ape Race's Sector Ape: black-blue space, a hot sun's glow, chrome decks, debris and troughs, cyan trim.",
+  "space": {
+    "zenith": [
+      4,
+      6,
+      16
+    ],
+    "horizon": [
+      18,
+      22,
+      44
+    ],
+    "sky_fill": [
+      70,
+      82,
+      128
+    ],
+    "bounce": [
+      60,
+      52,
+      70
+    ],
+    "sun": [
+      255,
+      238,
+      214
+    ],
+    "sun_glow": [
+      255,
+      150,
+      70
+    ],
+    "sun_glow_pct": 70,
+    "haze_per_km_pct": 3,
+    "palette": {
+      "floor": [
+        142,
+        150,
+        164
+      ],
+      "wall": [
+        62,
+        68,
+        84
+      ],
+      "ramp": [
+        198,
+        206,
+        220
+      ],
+      "slope": [
+        150,
+        158,
+        172
+      ],
+      "block": [
+        44,
+        48,
+        62
+      ],
+      "trim": [
+        127,
+        211,
+        255
+      ],
+      "vine": [
+        60,
+        255,
+        200
+      ]
+    }
   }
 }

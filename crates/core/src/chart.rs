@@ -227,6 +227,7 @@ fn goal_text(g: &Game, m: &Spec) -> String {
         "clear_waves" => n("goal_clear_waves", goal.waves),
         "defeat_boss" => s.get("goal_defeat_boss"),
         "salvage" => n("goal_salvage", goal.relics).replace("{need}", &goal.need.to_string()),
+        "long_jump" => n("goal_long_jump", m.medals.silver),
         _ => n("goal_gauntlet", goal.stages).replace("{repairs}", &goal.repairs.to_string()),
     }
 }
@@ -241,6 +242,10 @@ fn mark(g: &Game, m: &Spec, medal: u8, value: i32) -> String {
             .replace("{time}", &clock(value)),
         "health" => s
             .get("mark_health")
+            .replace("{medal}", &name)
+            .replace("{n}", &value.to_string()),
+        "distance" => s
+            .get("mark_distance")
             .replace("{medal}", &name)
             .replace("{n}", &value.to_string()),
         _ => s
@@ -258,6 +263,10 @@ fn best_text(g: &Game, m: &Spec) -> String {
             if m.medals.measure == "time" {
                 s.get("best_time")
                     .replace("{time}", &clock_ticks(b.score))
+                    .replace("{medal}", &medal)
+            } else if m.medals.measure == "distance" {
+                s.get("best_distance")
+                    .replace("{n}", &b.score.to_string())
                     .replace("{medal}", &medal)
             } else {
                 s.get("best_count")
@@ -411,6 +420,8 @@ pub fn results_panels(g: &Game) -> Vec<Panel> {
         String::from("—")
     } else if m.medals.measure == "time" {
         clock_ticks(o.score)
+    } else if m.medals.measure == "distance" {
+        s.get("score_distance").replace("{n}", &o.score.to_string())
     } else {
         o.score.to_string()
     };
@@ -535,6 +546,10 @@ pub fn hud(g: &Game, playing: bool) -> Vec<Hud> {
             .replace("{of}", &waves.to_string()),
         Part::Boss => s.get("goal_defeat_boss"),
         Part::Salvage => goal("label_relics"),
+        Part::LongJump => s
+            .get("hud_distance")
+            .replace("{n}", &run.done.to_string())
+            .replace("{lip}", &run.need.to_string()),
     };
     out.push(line("m-goal", text, true));
     if m.kind == "gauntlet" {
@@ -601,9 +616,10 @@ mod tests {
     fn the_chart_has_every_mission_five_open_and_routes_into_all_but_the_first_tier() {
         let g = crate::game::tests::game();
         let c = chart(&g);
-        assert_eq!(c.nodes.len(), 50);
+        assert_eq!(c.nodes.len(), 54);
         assert_eq!(c.nodes.iter().filter(|n| n.open).count(), 5);
-        assert_eq!(c.routes.len(), 45);
+        assert_eq!(c.routes.len(), 49);
+        assert_eq!(c.spokes.len(), 12);
         assert!(c.nodes[49].secret, "the finale is hidden until opened");
         assert_eq!(c.nodes[49].name, g.strings.get("secret_name"));
     }

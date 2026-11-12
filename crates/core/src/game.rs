@@ -72,6 +72,13 @@ pub struct Game {
     pub strings: Strings,
     pub glossary: Vec<crate::glossary::Entry>,
     pub look: Look,
+    /// Choomstar: the ground's look and the long-jump courses' (space),
+    /// which `look` is while one is shown, and a count the page follows to
+    /// send the sky again
+    pub ground_look: Look,
+    pub space_look: Look,
+    pub spaced: bool,
+    pub look_version: u32,
     pub meshes: MeshTable,
     pub world: World,
     /// the room's bot: moving only (Practice room) or shooting (Duel)
@@ -167,7 +174,9 @@ pub struct Game {
 impl Game {
     pub fn new(strings: &str, glossary: &str, look: &str, seed: u32) -> Result<Game, String> {
         let strings = page::parse_strings(strings).map_err(|e| e.message())?;
+        let space_look = Look::parse_space(look)?;
         let look = Look::parse(look)?;
+        let ground_look = look.clone();
         let world = World::practice();
         let groups = Self::map_groups(&world.map, &look);
         let mut g = Game {
@@ -209,6 +218,10 @@ impl Game {
             ready: 0,
             matched: false,
             scene_map: "practice",
+            ground_look,
+            space_look,
+            spaced: false,
+            look_version: 1,
             notice_seen: None,
             sounds: Vec::new(),
             volume_pct: VOLUME_START,
@@ -620,6 +633,18 @@ impl Game {
         self.world.fov = self.fov;
         if let Some(s) = self.versus.as_mut().and_then(|v| v.session_mut()) {
             s.world.fov = self.fov;
+        }
+        // Choomstar: a long-jump course is in space, with its own look
+        let space = self.view_world().map.name.starts_with("course_");
+        if space != self.spaced {
+            self.spaced = space;
+            self.look = if space {
+                self.space_look.clone()
+            } else {
+                self.ground_look.clone()
+            };
+            self.look_version += 1;
+            self.scene_map = "";
         }
         // M5: a new round on a new map: its static scene
         let shown = self.view_world().map.name;

@@ -480,6 +480,12 @@ A mission kind where the player carries only melee weapons.
 
 Not: blades only, knife fight
 
+### Long jump
+
+A mission kind on a course of its own in open space: surf, hop and swing as far along it as you can, then leave its lip for the field below. The distance gone is the score; gold asks for a long jump past the lip.
+
+Not: distance run, jump challenge
+
 ### Mission
 
 One short challenge with a goal and three medals. A mission opens when the medals it asks for are earned.
