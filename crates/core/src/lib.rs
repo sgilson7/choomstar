@@ -47,6 +47,7 @@ pub mod render;
 pub mod rng;
 pub mod rollback;
 pub mod rounds;
+pub mod royale;
 pub mod save;
 pub mod skins;
 pub mod sky;

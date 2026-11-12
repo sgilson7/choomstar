@@ -77,9 +77,9 @@ pub const WEAPONS: [&str; crate::weapons::COUNT] = [
 ];
 
 /// The kinds, in the chart's spoke order (the journal's star chart).
-pub const KINDS: [&str; 12] = [
+pub const KINDS: [&str; 13] = [
     "targets", "fixed", "combat", "melee", "team", "horde", "salvage", "arena", "boss", "gauntlet",
-    "parkour", "longjump",
+    "parkour", "longjump", "royale",
 ];
 
 pub const NONE: u8 = 0;
@@ -113,6 +113,8 @@ const ZOMBIE_FAR: i32 = 14;
 /// The most zombies on the map at once, and seats in all.
 const ZOMBIES_MOST: i32 = 14;
 const SEATS_MOST: usize = 24;
+/// Places tried for where you stand again in a royale.
+const SAFE_TRIES: i32 = 48;
 /// A moving target swings this far each way (m) over this many ticks.
 const SWAY: i32 = 3;
 const SWAY_TICKS: i32 = 240;
@@ -152,6 +154,8 @@ pub struct Goal {
     pub stages: i32,
     pub repairs: i32,
     pub moving: bool,
+    /// a royale's difficulty: easy, normal, hard or brutal
+    pub difficulty: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -441,6 +445,21 @@ pub enum Part {
     Salvage,
     /// a long-jump course: how far along it you go, and the jump off its lip
     LongJump,
+    /// a royale: a hundred bots, every one against every other, one life
+    /// each; you have the lives the difficulty gives
+    Royale,
+}
+
+/// A royale's difficulty: the lives you have and the bots' level (the
+/// person, 2026-11-12: "a differing number of lives based on the
+/// difficulty, while all the enemies only have 1").
+pub fn difficulty(name: &str) -> (i32, i32) {
+    match name {
+        "easy" => (5, 1),
+        "hard" => (2, 3),
+        "brutal" => (1, 4),
+        _ => (3, 2),
+    }
 }
 
 /// A long-jump course's numbers, as its mission reads them.
@@ -490,6 +509,9 @@ pub struct Run {
     pub jump: Option<Jump>,
     pub landed: Option<i32>,
     pub boss: Option<usize>,
+    /// a royale: your lives left, and bots still standing
+    pub lives: i32,
+    pub standing: i32,
     /// ticks left of the count before play, and of a round's end shown,
     /// with what it says and what comes after
     pub count: i32,
@@ -532,6 +554,28 @@ impl Run {
             p.prev = p.body.origin;
             j
         });
+        // a royale map is a map of its own too (royale.rs), its weapons
+        // lying where it puts them
+        if crate::royale::is_royale(&spec.map) {
+            let m = crate::royale::arena(&spec.map);
+            w.nav = Some(std::rc::Rc::new(crate::nav::Nav::of(&m)));
+            w.turned = std::rc::Rc::new(Vec::new());
+            w.pickups = m
+                .pickups
+                .iter()
+                .map(|&(at, weapon)| crate::world::Pickup {
+                    at,
+                    weapon,
+                    taken: false,
+                })
+                .collect();
+            let p = &mut w.players[0];
+            p.spawn = m.spawns[0];
+            p.respawn();
+            p.arms = Arms::for_round();
+            p.prev = p.body.origin;
+            w.map = std::rc::Rc::new(m);
+        }
         let team = spec.kind == "team";
         w.rules = Rules {
             hunt: true,
@@ -596,6 +640,7 @@ impl Run {
                     (_, "defeat_boss") => Part::Boss,
                     (_, "salvage") => Part::Salvage,
                     (_, "long_jump") => Part::LongJump,
+                    (_, "last_standing") => Part::Royale,
                     _ => Part::Duel,
                 };
                 vec![(part, spec.foes.clone())]
@@ -634,6 +679,8 @@ impl Run {
             repair: None,
             landed: None,
             boss: None,
+            lives: difficulty(&spec.goal.difficulty).0,
+            standing: 0,
             count: COUNT_TICKS,
             over: 0,
             banner: None,
@@ -708,13 +755,39 @@ impl Run {
             .unwrap_or(from)
     }
 
+    /// Of a few places on the floor, the one whose nearest standing bot is
+    /// farthest: where you stand again in a royale.
+    fn safest(&mut self, w: &World) -> V3 {
+        let bots: Vec<V3> = w.players[1..]
+            .iter()
+            .filter(|p| p.alive())
+            .map(|p| p.body.origin)
+            .collect();
+        let mut best = (self.spawn, -1);
+        for _ in 0..SAFE_TRIES {
+            if self.spots.is_empty() {
+                break;
+            }
+            let at = self.spots[self.rng.below(self.spots.len() as u32) as usize];
+            let near = bots.iter().map(|b| b.sub(at).len_xz()).min().unwrap_or(i32::MAX);
+            if near > best.1 {
+                best = (at, near);
+            }
+        }
+        best.0
+    }
+
     /// A free seat for a bot: a felled bot's, or a new one.
     fn seat(&mut self, w: &mut World, role: Role) -> Option<usize> {
         let k = (1..w.players.len())
             .find(|&k| self.roles[k] != Role::You && !w.players[k].alive() && w.rules.stay_down);
         let k = match k {
             Some(k) => k,
-            None if w.players.len() < SEATS_MOST => {
+            None if w.players.len() < SEATS_MOST
+                || role == Role::Bot
+                    && w.players.len() < crate::royale::FIGHTERS
+                    && crate::royale::is_royale(&self.spec().map) =>
+            {
                 w.players.push(Player::at((self.spawn, 0)));
                 self.roles.push(role);
                 self.alive_was.push(true);
@@ -936,6 +1009,28 @@ impl Run {
             Part::LongJump => {
                 self.need = spec.medals.silver;
             }
+            Part::Royale => {
+                // a hundred bots, one at each spawn but yours, each on no
+                // side (team 0 is every other seat's foe), so they fall to
+                // each other as well as to you
+                let (_, level) = difficulty(&spec.goal.difficulty);
+                let spawns = w.map.spawns.clone();
+                for (i, &(at, yaw)) in spawns.iter().enumerate().skip(1) {
+                    let f = FoeRef {
+                        bot: SKINS[i % (SKINS.len() - 1)].into(),
+                        level,
+                        ..FoeRef::default()
+                    };
+                    if let Some(k) = self.put_bot(w, &f, at) {
+                        let p = &mut w.players[k];
+                        p.team = 0;
+                        p.aim.yaw = yaw;
+                        p.spawn = (at, yaw);
+                    }
+                }
+                self.standing = w.players.len() as i32 - 1;
+                self.need = self.standing;
+            }
             Part::Salvage => {
                 let n = spec.goal.relics.max(1) as usize;
                 self.relics = self.spread(n, me).into_iter().map(|p| (p, false)).collect();
@@ -1013,6 +1108,7 @@ impl Run {
             "health" => w.players[0].health.max(0),
             "relics" => self.delivered,
             "distance" => self.done,
+            "lives" => self.lives,
             _ => self.ticks,
         }
     }
@@ -1115,7 +1211,12 @@ impl Run {
         // (where it loses the round)
         let mine_down = !w.players[0].alive();
         let part = self.current().clone();
-        if mine_down && part != Part::Team && part != Part::Duel && part != Part::LongJump {
+        if mine_down
+            && part != Part::Team
+            && part != Part::Duel
+            && part != Part::LongJump
+            && part != Part::Royale
+        {
             self.end(false, 0, "mission.felled");
             return;
         }
@@ -1129,10 +1230,24 @@ impl Run {
         // who felled whom
         let felled = w.felled.clone();
         let seats = w.players.len();
+        // a royale: felled, a life gone; with none left it is over, else
+        // you stand again where the nearest bot is farthest
+        if part == Part::Royale && mine_down && self.alive_was[0] {
+            self.lives -= 1;
+            if self.lives <= 0 {
+                self.alive_was[0] = false;
+                self.end(false, 0, "mission.out_of_lives");
+                return;
+            }
+            let at = self.safest(w);
+            let yaw = crate::geom::yaw_of(v3(-at.x, 0, -at.z));
+            w.players[0].spawn = (at, yaw);
+        }
         // seats standing again (a team match): their weapons back
         for k in 0..seats {
             let alive = w.players[k].alive();
-            if alive && !self.alive_was.get(k).copied().unwrap_or(true) && part == Part::Team {
+            let again = part == Part::Team || part == Part::Royale && k == 0;
+            if alive && !self.alive_was.get(k).copied().unwrap_or(true) && again {
                 if k == 0 {
                     if spec.loadout == "any" {
                         w.players[0].arms = Arms::for_round();
@@ -1341,6 +1456,17 @@ impl Run {
                         self.next = Next::Round;
                         w.rules.frozen = true;
                     }
+                }
+            }
+            Part::Royale => {
+                for &(by, k) in &felled {
+                    if by == 0 && k != 0 && k < seats {
+                        self.done += 1;
+                    }
+                }
+                self.standing = (1..seats).filter(|&k| w.players[k].alive()).count() as i32;
+                if self.standing == 0 {
+                    self.part_done(w);
                 }
             }
             Part::Team => {
@@ -1692,14 +1818,16 @@ mod tests {
     #[test]
     fn the_pack_holds_fifty_missions_and_every_requirement_points_to_a_lower_tier() {
         let p = pack();
-        assert_eq!(p.missions.len(), 54);
+        assert_eq!(p.missions.len(), 58);
         for m in &p.missions {
             for r in &m.requires {
                 let q = index(&r.mission).unwrap_or_else(|| panic!("{} requires {}", m.id, r.mission));
                 assert!(p.missions[q].tier() < m.tier(), "{} requires {}", m.id, r.mission);
             }
             assert!(
-                MAPS.contains(&m.map.as_str()) || crate::courses::is_course(&m.map),
+                MAPS.contains(&m.map.as_str())
+                    || crate::courses::is_course(&m.map)
+                    || crate::royale::is_royale(&m.map),
                 "{} on {}",
                 m.id,
                 m.map
@@ -2051,6 +2179,81 @@ mod tests {
     /// CM-5: a player who fells every foe the moment it stands and walks
     /// straight to each gate and relic clears every mission inside its
     /// time, so no goal is out of reach of the rules.
+    fn royale(id: &str) -> (Run, World) {
+        begin(index(id).unwrap(), 0, false)
+    }
+
+    #[test]
+    fn a_royale_seats_a_hundred_bots_on_no_side_and_gives_you_the_difficultys_lives() {
+        let (run, w) = royale("scrap_crown");
+        assert_eq!(w.players.len(), 101);
+        assert_eq!(run.standing, 100);
+        assert_eq!(run.lives, 5, "easy: five lives");
+        assert_eq!(royale("last_light").0.lives, 1, "brutal: one");
+        assert_eq!(royale("hub_riot").0.lives, 2, "hard: two");
+        assert!(w.players[1..]
+            .iter()
+            .all(|p| p.team == 0 && p.pilot.is_some() && p.alive()));
+        assert!(w.map.name.starts_with("royale_"));
+        assert!(w.pickups.len() >= 30, "weapons lie about");
+    }
+
+    #[test]
+    fn royale_bots_fell_each_other_and_a_felled_bot_stays_down() {
+        let (mut run, mut w) = royale("scrap_crown");
+        // you stand in the corner, out of it, whole
+        let mut gone_by_bots = 0;
+        for _ in 0..40 * SECOND {
+            w.players[0].health = HEALTH;
+            w.step(&[crate::input::Input::default()]);
+            gone_by_bots += w.felled.iter().filter(|&&(by, k)| by != 0 && k != 0).count();
+            run.step(&mut w, 0);
+        }
+        assert!(gone_by_bots >= 5, "only {gone_by_bots} felled by bots");
+        assert_eq!(run.standing, 100 - gone_by_bots as i32);
+        assert_eq!(run.done, 0, "none felled by you");
+        let down = (1..w.players.len()).filter(|&k| !w.players[k].alive()).count();
+        assert_eq!(down, gone_by_bots, "nobody stood again");
+    }
+
+    #[test]
+    fn a_fall_in_a_royale_costs_a_life_and_you_stand_again_until_none_are_left() {
+        let (mut run, mut w) = royale("hub_riot");
+        let fell_at = w.players[0].body.origin;
+        w.hit(1, 0, HEALTH * 2);
+        run.step(&mut w, 0);
+        assert_eq!(run.lives, 1);
+        assert!(run.outcome.is_none());
+        assert_ne!(w.players[0].spawn.0, fell_at, "somewhere else");
+        for _ in 0..crate::world::RESPAWN + 1 {
+            w.step(&[crate::input::Input::default()]);
+            run.step(&mut w, 0);
+        }
+        assert!(w.players[0].alive(), "stood again");
+        assert!(w.players[0].arms.owns(Weapon::Pistol), "with the pistol back");
+        w.hit(1, 0, HEALTH * 2);
+        run.step(&mut w, 0);
+        let o = run.outcome.expect("over");
+        assert!(!o.cleared);
+        assert_eq!(o.why, "mission.out_of_lives");
+    }
+
+    #[test]
+    fn the_last_one_standing_clears_a_royale_and_the_medal_is_the_lives_kept() {
+        let (mut run, mut w) = royale("scrap_crown");
+        w.hit(1, 0, HEALTH * 2);
+        run.step(&mut w, 0);
+        for k in 1..w.players.len() {
+            w.hit(0, k, HEALTH * 9);
+        }
+        run.step(&mut w, 0);
+        let o = run.outcome.expect("over");
+        assert!(o.cleared);
+        assert_eq!(o.score, 4);
+        assert_eq!(o.medal, SILVER, "four of five: silver is three");
+        assert_eq!(run.done, 100);
+    }
+
     fn oracle(k: usize) -> Option<Outcome> {
         let (mut run, mut w) = begin(k, 0, false);
         let most = run.spec().limit().max(600) * SECOND + SECOND;
@@ -2124,6 +2327,8 @@ mod tests {
             let (run, w) = Run::start(k, 0, false);
             let name = if crate::courses::is_course(&m.map) {
                 "course"
+            } else if crate::royale::is_royale(&m.map) {
+                "royale"
             } else {
                 "map"
             };

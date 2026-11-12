@@ -486,6 +486,24 @@ A mission kind on a course of its own in open space: surf, hop and swing as far 
 
 Not: distance run, jump challenge
 
+### Royale
+
+A mission kind on a map of its own: you and a hundred bots, every one against every other, until one is left standing. Each bot has one life; you have the lives its difficulty gives. The medal is the lives you kept.
+
+Not: battle pass, deathmatch
+
+### Difficulty
+
+How hard a royale is: Easy, Normal, Hard or Brutal. It sets your lives (five, three, two, one) and how well the bots fight.
+
+Not: skill level, mode
+
+### Lives
+
+How many times you can be felled in a royale and stand again. A royale ends when none are left.
+
+Not: continues, respawns
+
 ### Mission
 
 One short challenge with a goal and three medals. A mission opens when the medals it asks for are earned.

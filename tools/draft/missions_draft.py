@@ -78,11 +78,18 @@ m(51,"launch_rail","Launch Rail","longjump","rail","none",["2"],{"kind":"long_ju
 m(52,"debris_field","Debris Field","longjump","debris","none",["51","7"],{"kind":"long_jump","limit":90},"distance",110,224,274,[],"Hop the weaving debris down, surf the trough, hop again, then the lip.")
 m(53,"wreck_vines","Wreck Vines","longjump","wreck","none",["52","16","51"],{"kind":"long_jump","limit":90},"distance",100,201,251,[],"Two gaps too long to jump. Swing the wreck's vines across (F), then the lip.")
 m(54,"sector_ape","Sector Ape","longjump","sector","none",["53","25","16","52"],{"kind":"long_jump","limit":150},"distance",230,462,542,[],"Everything at once, over a long way down: troughs, debris, vines and the biggest lip.")
+# --- royales (the person, 2026-11-12): a hundred bots, every one against every other, one life
+# each, on maps of their own; you have the lives the difficulty gives (easy 5, normal 3, hard 2,
+# brutal 1). Cleared by being the last one standing; the medal is the lives you kept.
+m(55,"scrap_crown","Scrap Crown","royale","scrapyard","any",["4"],{"kind":"last_standing","difficulty":"easy"},"lives",1,3,5,[],"A hundred bots among the containers, and five lives. Take a weapon off the floor and let them thin each other out.")
+m(56,"hundred_spires","A Hundred Spires","royale","spires","any",["55","9"],{"kind":"last_standing","difficulty":"normal"},"lives",1,2,3,[],"Columns to hide behind and a hundred hunting you and each other. Three lives.")
+m(57,"hub_riot","Hub Riot","royale","hub","any",["56","18","14"],{"kind":"last_standing","difficulty":"hard"},"lives",1,1,2,[],"Three broken rings round a tower, sharper bots, two lives.")
+m(58,"last_light","Last Light","royale","scrapyard","any",["57","18","14","9"],{"kind":"last_standing","difficulty":"brutal"},"lives",1,1,1,[],"The best bots, a hundred of them, and one life. Last one standing.")
 
 ids = {x["n"]: x for x in M}
 def tier(x): return x.get("row", len(x["requires"]))
 problems = []
-assert len(M) == 54, len(M)
+assert len(M) == 58, len(M)
 for x in M:
     for r in x["requires"]:
         k = int(r.split(":")[0])

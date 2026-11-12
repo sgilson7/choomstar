@@ -2204,6 +2204,130 @@
    },
    "foes": [],
    "brief": "Everything at once, over a long way down: troughs, debris, vines and the biggest lip."
+  },
+  {
+   "id": "scrap_crown",
+   "name": "Scrap Crown",
+   "kind": "royale",
+   "map": "scrapyard",
+   "loadout": "any",
+   "requires": [
+    {
+     "mission": "sparring",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "last_standing",
+    "difficulty": "easy"
+   },
+   "medals": {
+    "measure": "lives",
+    "bronze": 1,
+    "silver": 3,
+    "gold": 5
+   },
+   "foes": [],
+   "brief": "A hundred bots among the containers, and five lives. Take a weapon off the floor and let them thin each other out."
+  },
+  {
+   "id": "hundred_spires",
+   "name": "A Hundred Spires",
+   "kind": "royale",
+   "map": "spires",
+   "loadout": "any",
+   "requires": [
+    {
+     "mission": "scrap_crown",
+     "medal": "bronze"
+    },
+    {
+     "mission": "two_at_once",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "last_standing",
+    "difficulty": "normal"
+   },
+   "medals": {
+    "measure": "lives",
+    "bronze": 1,
+    "silver": 2,
+    "gold": 3
+   },
+   "foes": [],
+   "brief": "Columns to hide behind and a hundred hunting you and each other. Three lives."
+  },
+  {
+   "id": "hub_riot",
+   "name": "Hub Riot",
+   "kind": "royale",
+   "map": "hub",
+   "loadout": "any",
+   "requires": [
+    {
+     "mission": "hundred_spires",
+     "medal": "bronze"
+    },
+    {
+     "mission": "ladder_one",
+     "medal": "bronze"
+    },
+    {
+     "mission": "two_by_two",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "last_standing",
+    "difficulty": "hard"
+   },
+   "medals": {
+    "measure": "lives",
+    "bronze": 1,
+    "silver": 1,
+    "gold": 2
+   },
+   "foes": [],
+   "brief": "Three broken rings round a tower, sharper bots, two lives."
+  },
+  {
+   "id": "last_light",
+   "name": "Last Light",
+   "kind": "royale",
+   "map": "scrapyard",
+   "loadout": "any",
+   "requires": [
+    {
+     "mission": "hub_riot",
+     "medal": "bronze"
+    },
+    {
+     "mission": "ladder_one",
+     "medal": "bronze"
+    },
+    {
+     "mission": "two_by_two",
+     "medal": "bronze"
+    },
+    {
+     "mission": "two_at_once",
+     "medal": "bronze"
+    }
+   ],
+   "goal": {
+    "kind": "last_standing",
+    "difficulty": "brutal"
+   },
+   "medals": {
+    "measure": "lives",
+    "bronze": 1,
+    "silver": 1,
+    "gold": 1
+   },
+   "foes": [],
+   "brief": "The best bots, a hundred of them, and one life. Last one standing."
   }
  ]
 }

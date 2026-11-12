@@ -183,7 +183,9 @@ pub struct Swinging {
     pub age: i32,
     pub lunge: bool,
     pub cut: Option<i32>,
-    pub struck: u64,
+    /// Choomstar: 128 bits, as a royale's 101 seats are targets (R2.15); a
+    /// target past the 128th is never struck by a swing
+    pub struck: u128,
 }
 
 /// T33: a hold on a vine: which of the map's, and how far the hands are
@@ -712,6 +714,7 @@ impl World {
             if let Some(sw) = p.swing {
                 mix(sw.age as i64);
                 mix(sw.struck as i64);
+                mix((sw.struck >> 64) as i64);
                 mix(sw.cut.unwrap_or(i32::MIN) as i64);
             }
             mix(p.flick.0 as i64);
@@ -761,23 +764,26 @@ impl World {
         let eye = me.eye_now();
         let in_match = self.rounds.is_some() || self.rules.hunt;
         let foe = |p: &Player| me.team == 0 || p.team != me.team;
-        let seen = self
+        // Choomstar: nearest first, the first in clear sight; the same seat
+        // as testing the sight to every one, with a hundred bots on a map
+        // far fewer tests (R2.15)
+        let sight = pilot::SIGHT as i64 * pilot::SIGHT as i64;
+        let mut near: Vec<(i64, usize, V3, V3)> = self
             .players
             .iter()
             .enumerate()
             .filter(|(k, p)| *k != id && p.alive() && foe(p) && (in_match || p.pilot.is_none()))
-            .map(|(_, p)| {
-                (
-                    p.body.origin.add(p.up().scale(p.body.eye() - ONE / 4)),
-                    p.body.velocity,
-                )
+            .map(|(k, p)| {
+                let c = p.body.origin.add(p.up().scale(p.body.eye() - ONE / 4));
+                (far2(c.sub(eye)), k, c, p.body.velocity)
             })
-            .filter(|&(c, _)| {
-                let to = c.sub(eye);
-                let d = to.len();
-                d <= pilot::SIGHT && self.clear(scratch, eye, c)
-            })
-            .min_by_key(|(c, _)| c.sub(eye).len());
+            .filter(|&(d, ..)| d <= sight)
+            .collect();
+        near.sort_unstable_by_key(|&(d, k, ..)| (d, k));
+        let seen = near
+            .into_iter()
+            .find(|&(_, _, c, _)| self.clear(scratch, eye, c))
+            .map(|(_, _, c, v)| (c, v));
         let chest = seen.map(|(c, _)| c);
         // T20: hit this tick, from whom; and low, the nearest spawn out of
         // the target's sight to fall back to
@@ -799,7 +805,7 @@ impl World {
             .enumerate()
             .filter(|(k, p)| in_match && *k != id && p.alive() && foe(p))
             .map(|(_, p)| p.body.origin)
-            .min_by_key(|f| f.sub(me.body.origin).len());
+            .min_by_key(|f| far2(f.sub(me.body.origin)));
         // T37: on the Cubo, what it hunts on the other side of the wall,
         // inside or out, it goes after through the hole
         let hunt = match self.map.cube {
@@ -1583,7 +1589,7 @@ impl World {
                         Some((frame, was, now)) => weapons::in_cut(&sw, eye, frame, was, now, t),
                         None => weapons::in_arc(&sw, eye, aim, t),
                     };
-                    if s.struck & (1 << k) != 0 || !meets {
+                    if k >= 128 || s.struck & (1 << k) != 0 || !meets {
                         continue;
                     }
                     s.struck |= 1 << k;
@@ -2219,6 +2225,13 @@ fn draw_projectile(out: &mut Shapes, q: &Projectile, alpha: Fx, pal: &Palette, i
 pub fn speed_text(speed: Fx) -> String {
     let tenths = (speed as i64 * 10 + (ONE as i64 / 2)) >> fx::SHIFT;
     format!("{}.{}", tenths / 10, tenths % 10)
+}
+
+/// Choomstar: a length squared, in i64, to order distances without a
+/// square root (a hundred bots each weigh every other each tick, R2.15).
+fn far2(v: V3) -> i64 {
+    let (x, y, z) = (v.x as i64, v.y as i64, v.z as i64);
+    x * x + y * y + z * z
 }
 
 #[cfg(test)]

@@ -618,8 +618,8 @@
  {
   "name": "M3 a swing hits each body once",
   "file": "crates/core/src/world.rs",
-  "find": "                    if s.struck & (1 << k) != 0 || !meets {",
-  "replace": "                    if !meets {",
+  "find": "                    if k >= 128 || s.struck & (1 << k) != 0 || !meets {",
+  "replace": "                    if k >= 128 || !meets {",
   "test": "a_katana_swing_hits_a_straw_target_within_reach_once_and_misses_one_beyond"
  },
  {
@@ -2707,5 +2707,40 @@
   "find": "                    self.done = j.length + jumped;",
   "replace": "                    self.done = j.length;",
   "test": "a_long_jump_scores_the_course_gone_and_the_jump_past_its_lip"
+ },
+ {
+  "name": "CM royale bots stand on no side",
+  "file": "crates/core/src/mission.rs",
+  "find": "                        p.team = 0;",
+  "replace": "                        p.team = 2;",
+  "test": "royale_bots_fell_each_other_and_a_felled_bot_stays_down"
+ },
+ {
+  "name": "CM a royale fall costs a life",
+  "file": "crates/core/src/mission.rs",
+  "find": "            self.lives -= 1;",
+  "replace": "            self.lives -= 0;",
+  "test": "a_fall_in_a_royale_costs_a_life_and_you_stand_again_until_none_are_left"
+ },
+ {
+  "name": "CM royale lives follow the difficulty",
+  "file": "crates/core/src/mission.rs",
+  "find": "        \"easy\" => (5, 1),",
+  "replace": "        \"easy\" => (3, 1),",
+  "test": "a_royale_seats_a_hundred_bots_on_no_side_and_gives_you_the_difficultys_lives"
+ },
+ {
+  "name": "CM the last one standing clears a royale",
+  "file": "crates/core/src/mission.rs",
+  "find": "                if self.standing == 0 {",
+  "replace": "                if self.standing < 0 {",
+  "test": "the_last_one_standing_clears_a_royale_and_the_medal_is_the_lives_kept"
+ },
+ {
+  "name": "CM royale spawns stand on open floor",
+  "file": "crates/core/src/royale.rs",
+  "find": "            if open(at) {\n                // facing the middle",
+  "replace": "            if true {\n                // facing the middle",
+  "test": "every_royale_map_seats_a_hundred_and_one_on_open_floor_with_weapons_about"
  }
 ]
