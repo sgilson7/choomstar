@@ -1136,7 +1136,7 @@
  {
   "name": "M5 nobody moves in the count",
   "file": "crates/core/src/world.rs",
-  "find": "            let r = if self.rounds.is_some_and(|x| x.frozen()) {",
+  "find": "            let r = if self.rounds.is_some_and(|x| x.frozen()) || self.rules.frozen {",
   "replace": "            let r = if false {",
   "test": "during_the_count_nobody_moves_and_after_it_they_do"
  },
