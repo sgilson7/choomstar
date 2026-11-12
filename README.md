@@ -1,8 +1,8 @@
-# A Builder tool
+# Choomstar
 
-Replace this file with your tool's README once `BRIEF.md` is written. `crates/core/tests/copy.rs` reads it against `TONE.md`.
+A single-player mission run in the browser, built on Chumontillado's movement, weapons, maps and skins (commit c48d8dd) with Long Time Comin's foes and their orb patterns. Fifty missions of eleven kinds sit on a star chart of eight tiers; medals on earlier missions open the later ones. Play it at https://sgilson7.github.io/choomstar/ with a keyboard and mouse.
 
-This directory is a copy of the Builder template. Its rules are in `BUILDER-SPEC.md`, a coding agent's instructions are in `CLAUDE.md` and `AGENTS.md`, the meaning of each term is in `GLOSSARY.md`, and the rules for every string are in `TONE.md`.
+The rules live in a Rust core compiled to WebAssembly (`crates/core`); the page draws what the core describes (`web/`). The missions are data (`data/missions.json`), so a new pack is a new file. Rules for the code are in `BUILDER-SPEC.md` and `CLAUDE.md`, the meaning of each term in `GLOSSARY.md`, and the rules for every string in `TONE.md`.
 
 ## Build, test and serve
 

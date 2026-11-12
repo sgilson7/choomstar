@@ -32,6 +32,8 @@ Where the design journal is, its link if it is published, and its newest entry.
 
 Every `SECOND-ORDER.md` row with status *person*, by number, with what the person has to decide or supply. `scripts/notebook_check.py` fails while one is missing.
 
+- R1.8: read the fifty mission names, their briefs and the tier names (data/missions.json, data/strings.json `tier_*`); they are the agent's text.
+
 ## Mistakes so far
 
 By system, from `SECOND-ORDER.md`, with the rule each one produced.

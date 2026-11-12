@@ -1167,7 +1167,8 @@ impl World {
     fn hurt(&mut self, by: usize, k: usize, dmg: i32) -> bool {
         let seats = self.players.len();
         // Choomstar: two seats of one side do not hurt each other
-        if k < seats && k != by && self.players[k].team != 0 && self.players[k].team == self.players[by].team {
+        if k < seats && k != by && self.players[k].team != 0 && self.players[k].team == self.players[by].team
+        {
             return false;
         }
         if k != by {

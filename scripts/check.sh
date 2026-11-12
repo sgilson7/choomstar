@@ -31,6 +31,9 @@ cargo clippy --workspace --all-targets --quiet -- -D warnings
 step "3/9 core and boundary tests (cargo test)"
 cargo test --workspace --quiet
 
+step "3b/9 every break row still finds its code (scripts/break_tests.py --rotted)"
+"$PY" scripts/break_tests.py --rotted
+
 step "4/9 release WebAssembly build (scripts/build.sh)"
 ./scripts/build.sh >/dev/null
 echo "dist/ assembled"
@@ -40,6 +43,10 @@ step "5/9 WebAssembly import audit (scripts/wasm_imports.py)"
 
 step "6/9 art pipeline checks, no TeX needed (tests/art_check.py)"
 if [ -f tests/art_check.py ]; then "$PY" tests/art_check.py; else echo "no art pipeline in this project"; fi
+
+step "6b/9 lifelike clips: nothing clips, and the check fails on planted defects (scripts/check_clips.py, tests/clip_defect.py)"
+python3 scripts/check_clips.py
+python3 tests/clip_defect.py
 
 step "7/9 notebook form, test tags and context (scripts/notebook_check.py, scripts/quick_check.py --guard, scripts/context_check.py)"
 "$PY" scripts/notebook_check.py

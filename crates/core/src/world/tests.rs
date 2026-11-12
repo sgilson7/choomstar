@@ -2482,3 +2482,41 @@ fn on_every_other_map_gravity_never_turns() {
         }
     }
 }
+
+/// Choomstar: two seats of one side do not hurt each other; a foe does.
+#[test]
+fn a_seat_of_your_side_does_not_hurt_you_and_a_foe_does() {
+    let mut w = World::room(Bot::Moves);
+    w.players[0].team = 1;
+    w.players[1].team = 1;
+    assert!(!w.hurt(1, 0, 30));
+    assert_eq!(w.players[0].health, HEALTH);
+    w.players[1].team = 2;
+    w.hurt(1, 0, 30);
+    assert_eq!(w.players[0].health, HEALTH - 30);
+}
+
+/// Choomstar: in a mission a felled target stays down, and the fall is
+/// told to the mission (`felled`).
+#[test]
+fn in_a_mission_a_felled_target_stays_down_and_is_counted() {
+    let mut w = World::room(Bot::Moves);
+    w.rules.stay_down = true;
+    let seats = w.players.len();
+    assert!(w.hurt(0, seats, HEALTH));
+    assert_eq!(w.felled, vec![(0, seats)]);
+    for _ in 0..(TARGET_DOWN + 5) {
+        w.step(&[Input::default()]);
+    }
+    assert!(w.dummies[0].down > 0);
+}
+
+/// Choomstar: a zombie's pace is a share of the run speed; everyone
+/// else's is Chumontillado's own.
+#[test]
+fn a_seats_pace_scales_its_run_speed_and_is_the_tunings_by_default() {
+    let mut p = Player::at((V3::ZERO, 0));
+    assert_eq!(p.tuning().run, TUNING.run);
+    p.run_pct = 45;
+    assert_eq!(p.tuning().run, TUNING.run * 45 / 100);
+}

@@ -399,11 +399,16 @@ pub enum Part {
     Targets,
     Course,
     /// zombies: felled to count, or a time to last
-    Horde { count: i32, seconds: i32 },
+    Horde {
+        count: i32,
+        seconds: i32,
+    },
     /// rounds against bots: won, lost, and the ladder's rung
     Duel,
     Team,
-    Arena { waves: i32 },
+    Arena {
+        waves: i32,
+    },
     Boss,
     Salvage,
 }
@@ -493,7 +498,10 @@ impl Run {
                 .iter()
                 .map(|f| {
                     let part = match f.stage.as_str() {
-                        "horde" => Part::Horde { count: 12, seconds: 0 },
+                        "horde" => Part::Horde {
+                            count: 12,
+                            seconds: 0,
+                        },
                         "combat" => Part::Duel,
                         "arena" => Part::Arena { waves: 2 },
                         _ => Part::Boss,
@@ -624,7 +632,8 @@ impl Run {
 
     /// A free seat for a bot: a felled bot's, or a new one.
     fn seat(&mut self, w: &mut World, role: Role) -> Option<usize> {
-        let k = (1..w.players.len()).find(|&k| self.roles[k] != Role::You && !w.players[k].alive() && w.rules.stay_down);
+        let k = (1..w.players.len())
+            .find(|&k| self.roles[k] != Role::You && !w.players[k].alive() && w.rules.stay_down);
         let k = match k {
             Some(k) => k,
             None if w.players.len() < SEATS_MOST => {
@@ -781,7 +790,11 @@ impl Run {
             }
             Part::Duel => {
                 let ladder = spec.goal.ladder.max(0);
-                self.need = if ladder > 0 { ladder } else { spec.goal.rounds.max(1) };
+                self.need = if ladder > 0 {
+                    ladder
+                } else {
+                    spec.goal.rounds.max(1)
+                };
                 self.rung = 0;
                 self.start_round(w);
             }
@@ -820,7 +833,11 @@ impl Run {
                         self.boss = Some(k);
                     }
                 } else {
-                    let ltc_id = if id == "section_chief" { "chief" } else { id.as_str() };
+                    let ltc_id = if id == "section_chief" {
+                        "chief"
+                    } else {
+                        id.as_str()
+                    };
                     self.put_foe(w, ltc_id, at);
                     self.boss = Some(self.foes.len() - 1);
                 }
@@ -853,12 +870,16 @@ impl Run {
             }
         }
         let health = w.players[0].health;
-        let arms = w.players[0].arms.clone();
+        let arms = w.players[0].arms;
         w.players[0].respawn();
         if spec.kind == "gauntlet" {
             w.players[0].health = health;
         }
-        w.players[0].arms = if spec.loadout == "any" { Arms::for_round() } else { arms };
+        w.players[0].arms = if spec.loadout == "any" {
+            Arms::for_round()
+        } else {
+            arms
+        };
         let spawns = w.map.spawns.clone();
         let rung: Vec<FoeRef> = if spec.goal.ladder > 0 {
             foes.get(self.rung).cloned().into_iter().collect()
@@ -1011,12 +1032,21 @@ impl Run {
             let alive = o.step(&map);
             let mut gone = !alive;
             if !gone && o.parried {
-                if let Some(f) = self.foes.iter_mut().find(|f| !f.down && ltc::within(f.at, o.pos, f.radius() + o.radius)) {
+                if let Some(f) = self
+                    .foes
+                    .iter_mut()
+                    .find(|f| !f.down && ltc::within(f.at, o.pos, f.radius() + o.radius))
+                {
                     f.hp -= ltc::data().balance.parry_damage;
                     f.flash = crate::world::FLASH;
                     gone = true;
                 }
-            } else if !gone && o.gold && swinging && ltc::within(o.pos, eye, parry_reach) && o.pos.sub(eye).dot(aim) > 0 {
+            } else if !gone
+                && o.gold
+                && swinging
+                && ltc::within(o.pos, eye, parry_reach)
+                && o.pos.sub(eye).dot(aim) > 0
+            {
                 // a gold orb struck back by a melee swing (CM-Q9)
                 o.parried = true;
                 o.dir = aim;
@@ -1145,7 +1175,11 @@ impl Run {
                     if spec.goal.ladder > 0 {
                         self.rung += 1;
                     }
-                    self.done = if spec.goal.ladder > 0 { self.rung as i32 } else { self.won };
+                    self.done = if spec.goal.ladder > 0 {
+                        self.rung as i32
+                    } else {
+                        self.won
+                    };
                     if self.done >= self.need {
                         self.part_done(w);
                     } else {
@@ -1185,7 +1219,13 @@ impl Run {
                     let ids: Vec<String> = self
                         .foes_now()
                         .iter()
-                        .map(|f| if f.enemy.is_empty() { "sentinel".to_string() } else { f.enemy.clone() })
+                        .map(|f| {
+                            if f.enemy.is_empty() {
+                                "sentinel".to_string()
+                            } else {
+                                f.enemy.clone()
+                            }
+                        })
                         .collect();
                     let ids = if ids.iter().all(|i| i == "sentinel") && spec.kind == "gauntlet" {
                         vec!["sentinel".to_string(), "drifter".to_string(), "moth".to_string()]
@@ -1205,10 +1245,16 @@ impl Run {
             }
             Part::Boss => {
                 let down = match self.boss {
-                    Some(k) if self.parts[self.part].1.first().is_some_and(|f| f.boss == "black_knight") => {
+                    Some(k)
+                        if self.parts[self.part]
+                            .1
+                            .first()
+                            .is_some_and(|f| f.boss == "black_knight") =>
+                    {
                         let p = &mut w.players[k];
                         // past half health it takes up the trabuco too
-                        if p.health * 100 / KNIGHT_HEALTH <= KNIGHT_RAGE_PCT && !p.arms.owns(Weapon::Trabuco) {
+                        if p.health * 100 / KNIGHT_HEALTH <= KNIGHT_RAGE_PCT && !p.arms.owns(Weapon::Trabuco)
+                        {
                             p.arms.pick_up(Weapon::Trabuco);
                         }
                         !p.alive()
@@ -1283,7 +1329,11 @@ impl Run {
             .filter(|f| !f.zombie.is_empty() && secs >= f.from)
             .map(|f| f.zombie.as_str())
             .collect();
-        let kinds = if kinds.is_empty() { vec!["shambler", "runner"] } else { kinds };
+        let kinds = if kinds.is_empty() {
+            vec!["shambler", "runner"]
+        } else {
+            kinds
+        };
         let kind = kinds[self.rng.below(kinds.len() as u32) as usize].to_string();
         let me = w.players[0].body.origin;
         let at = if guard && !self.relics.is_empty() {
@@ -1301,9 +1351,14 @@ impl Run {
         if *self.current() != Part::Boss {
             return None;
         }
-        let knight = self.parts[self.part].1.first().is_some_and(|f| f.boss == "black_knight");
+        let knight = self.parts[self.part]
+            .1
+            .first()
+            .is_some_and(|f| f.boss == "black_knight");
         Some(if knight {
-            w.players.get(k).map_or(0, |p| p.health.max(0) * 100 / KNIGHT_HEALTH)
+            w.players
+                .get(k)
+                .map_or(0, |p| p.health.max(0) * 100 / KNIGHT_HEALTH)
         } else {
             self.foes.get(k).map_or(0, |f| f.hp.max(0) * 100 / f.most.max(1))
         })
@@ -1312,7 +1367,10 @@ impl Run {
     /// The boss's name, for the bar.
     pub fn boss_name(&self) -> Option<&'static str> {
         let k = self.boss?;
-        let knight = self.parts[self.part].1.first().is_some_and(|f| f.boss == "black_knight");
+        let knight = self.parts[self.part]
+            .1
+            .first()
+            .is_some_and(|f| f.boss == "black_knight");
         if knight {
             return None;
         }
@@ -1334,7 +1392,12 @@ impl Run {
                 ONE * 3 / 2,
                 GATE_REACH,
             )));
-            out.glow(Mesh::Tube, at, if next { cyan } else { rgb(pal.steel) }, if next { ONE } else { ONE / 4 });
+            out.glow(
+                Mesh::Tube,
+                at,
+                if next { cyan } else { rgb(pal.steel) },
+                if next { ONE } else { ONE / 4 },
+            );
         }
         for (p, taken) in &self.relics {
             if *taken {
@@ -1344,7 +1407,8 @@ impl Run {
                 .then(&Affine::rot_y(fx::mul(moment, fx::deg(3))))
                 .then(&Affine::scale(v3(ONE * 3 / 10, ONE * 4 / 10, ONE * 3 / 10)));
             out.inked(Mesh::Octa, at, gold, ink);
-            let glow = Affine::translate(p.add(v3(0, ONE / 20, 0))).then(&Affine::scale(v3(ONE, ONE / 10, ONE)));
+            let glow =
+                Affine::translate(p.add(v3(0, ONE / 20, 0))).then(&Affine::scale(v3(ONE, ONE / 10, ONE)));
             out.glow(Mesh::Sphere, glow, gold, ONE / 2);
         }
         if *self.current() == Part::Salvage {
@@ -1354,7 +1418,12 @@ impl Run {
                 ONE / 10,
                 LIFT_REACH,
             )));
-            out.glow(Mesh::Tube, at, if open { cyan } else { rgb([224, 65, 43]) }, ONE * 3 / 4);
+            out.glow(
+                Mesh::Tube,
+                at,
+                if open { cyan } else { rgb([224, 65, 43]) },
+                ONE * 3 / 4,
+            );
         }
         if let Some(r) = self.repair {
             let at = Affine::translate(r.add(v3(0, ONE * 8 / 10, 0)))
@@ -1365,20 +1434,23 @@ impl Run {
         for f in self.foes.iter().filter(|f| !f.down) {
             let at = f.prev.lerp(f.at, alpha);
             let r = f.radius();
-            let body = if f.flash > 0 { rgb(pal.flash) } else { rgb([200, 208, 218]) };
+            let body = if f.flash > 0 {
+                rgb(pal.flash)
+            } else {
+                rgb([200, 208, 218])
+            };
             let ball = Affine::translate(at)
                 .then(&Affine::rot_y(fx::mul(moment, fx::deg(1))))
                 .then(&Affine::scale(v3(r * 2, r * 2, r * 2)));
             out.inked(Mesh::Facet, ball, body, ink);
             let s = f.spec();
-            let eye_rgb = rgb(
-                s.attacks
-                    .first()
-                    .or_else(|| s.phases.first().and_then(|p| p.attacks.first()))
-                    .and_then(|a| ltc::data().patterns.get(&a.pattern))
-                    .and_then(|p| p.volleys.first())
-                    .map_or([255, 46, 136], |v| ltc::data().colour(&v.colour)),
-            );
+            let eye_rgb = rgb(s
+                .attacks
+                .first()
+                .or_else(|| s.phases.first().and_then(|p| p.attacks.first()))
+                .and_then(|a| ltc::data().patterns.get(&a.pattern))
+                .and_then(|p| p.volleys.first())
+                .map_or([255, 46, 136], |v| ltc::data().colour(&v.colour)));
             let eye = Affine::translate(at).then(&Affine::scale(v3(r, r, r)));
             out.glow(Mesh::Sphere, eye, eye_rgb, ONE / 2 + f.winding() / 2);
             if f.winding() > 0 {
@@ -1391,7 +1463,12 @@ impl Run {
             let at = o.prev.lerp(o.pos, alpha);
             let d = o.radius * 2;
             let c = if o.parried { cyan } else { rgb(o.rgb) };
-            out.glow(Mesh::Sphere, Affine::translate(at).then(&Affine::scale(v3(d, d, d))), c, ONE);
+            out.glow(
+                Mesh::Sphere,
+                Affine::translate(at).then(&Affine::scale(v3(d, d, d))),
+                c,
+                ONE,
+            );
             let core = d / 2;
             out.solid(
                 Mesh::Sphere,
@@ -1446,11 +1523,26 @@ mod tests {
             ("gauntlet_one", GOLD),
         ]);
         assert!(!open(m, &have), "gauntlet_two missing");
-        have.insert("gauntlet_two".into(), Best { medal: SILVER, score: 0 });
+        have.insert(
+            "gauntlet_two".into(),
+            Best {
+                medal: SILVER,
+                score: 0,
+            },
+        );
         assert!(!open(m, &have), "silver is not gold");
-        have.insert("gauntlet_two".into(), Best { medal: GOLD, score: 0 });
+        have.insert(
+            "gauntlet_two".into(),
+            Best {
+                medal: GOLD,
+                score: 0,
+            },
+        );
         assert!(open(m, &have));
-        assert_eq!(pack().missions.iter().filter(|m| open(m, &progress(&[]))).count(), 5);
+        assert_eq!(
+            pack().missions.iter().filter(|m| open(m, &progress(&[]))).count(),
+            5
+        );
     }
 
     #[test]
@@ -1474,9 +1566,21 @@ mod tests {
         let mut p = Progress::new();
         record(&mut p, m, 40 * SECOND);
         record(&mut p, m, 80 * SECOND);
-        assert_eq!(p["first_light"], Best { medal: SILVER, score: 40 * SECOND });
+        assert_eq!(
+            p["first_light"],
+            Best {
+                medal: SILVER,
+                score: 40 * SECOND
+            }
+        );
         record(&mut p, m, 20 * SECOND);
-        assert_eq!(p["first_light"], Best { medal: GOLD, score: 20 * SECOND });
+        assert_eq!(
+            p["first_light"],
+            Best {
+                medal: GOLD,
+                score: 20 * SECOND
+            }
+        );
     }
 
     #[test]
@@ -1535,10 +1639,15 @@ mod tests {
         w.players[0].body.origin = second;
         run.step(&mut w, crate::input::FORWARD);
         assert_eq!(run.gate, 0, "the second gate before the first counts nothing");
-        for g in run.gates.clone() {
-            w.players[0].body.origin = g;
+        let gates = run.gates.clone();
+        for g in &gates[..gates.len() - 1] {
+            w.players[0].body.origin = *g;
             run.step(&mut w, crate::input::FORWARD);
         }
+        assert_eq!(run.gate, 5);
+        assert!(run.outcome.is_none(), "five of six gates is not the end");
+        w.players[0].body.origin = gates[5];
+        run.step(&mut w, crate::input::FORWARD);
         assert_eq!(run.outcome.map(|o| o.cleared), Some(true));
     }
 
@@ -1613,7 +1722,9 @@ mod tests {
     fn a_team_match_counts_the_sides_and_allies_do_not_hurt_you() {
         let (run, w) = Run::start(index("two_by_two").unwrap(), 0, false);
         assert_eq!(run.need, 10);
-        let ally = (1..w.players.len()).find(|&k| run.roles[k] == Role::Ally).unwrap();
+        let ally = (1..w.players.len())
+            .find(|&k| run.roles[k] == Role::Ally)
+            .unwrap();
         assert_eq!(w.players[ally].team, w.players[0].team);
         assert!(!w.rules.stay_down);
     }

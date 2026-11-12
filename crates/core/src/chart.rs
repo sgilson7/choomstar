@@ -213,7 +213,9 @@ fn goal_text(g: &Game, m: &Spec) -> String {
         "reach_end" => n("goal_reach_end", goal.gates),
         "survive" => s.get("goal_survive").replace("{time}", &clock(goal.seconds)),
         "defeat" => n("goal_defeat", goal.count),
-        "win_rounds" if goal.ladder > 0 => n("goal_ladder", goal.ladder).replace("{lives}", &goal.rounds.to_string()),
+        "win_rounds" if goal.ladder > 0 => {
+            n("goal_ladder", goal.ladder).replace("{lives}", &goal.rounds.to_string())
+        }
         "win_rounds" => n("goal_win_rounds", goal.rounds),
         "team_score" => n("goal_team_score", goal.score),
         "clear_waves" => n("goal_clear_waves", goal.waves),
@@ -227,9 +229,18 @@ fn mark(g: &Game, m: &Spec, medal: u8, value: i32) -> String {
     let s = &g.strings;
     let name = s.get(medal_key(medal));
     match m.medals.measure.as_str() {
-        "time" => s.get("mark_time").replace("{medal}", &name).replace("{time}", &clock(value)),
-        "health" => s.get("mark_health").replace("{medal}", &name).replace("{n}", &value.to_string()),
-        _ => s.get("mark_relics").replace("{medal}", &name).replace("{n}", &value.to_string()),
+        "time" => s
+            .get("mark_time")
+            .replace("{medal}", &name)
+            .replace("{time}", &clock(value)),
+        "health" => s
+            .get("mark_health")
+            .replace("{medal}", &name)
+            .replace("{n}", &value.to_string()),
+        _ => s
+            .get("mark_relics")
+            .replace("{medal}", &name)
+            .replace("{n}", &value.to_string()),
     }
 }
 
@@ -239,9 +250,13 @@ fn best_text(g: &Game, m: &Spec) -> String {
         Some(b) if b.medal > NONE => {
             let medal = s.get(medal_key(b.medal));
             if m.medals.measure == "time" {
-                s.get("best_time").replace("{time}", &clock_ticks(b.score)).replace("{medal}", &medal)
+                s.get("best_time")
+                    .replace("{time}", &clock_ticks(b.score))
+                    .replace("{medal}", &medal)
             } else {
-                s.get("best_count").replace("{n}", &b.score.to_string()).replace("{medal}", &medal)
+                s.get("best_count")
+                    .replace("{n}", &b.score.to_string())
+                    .replace("{medal}", &medal)
             }
         }
         _ => s.get("best_none"),
@@ -345,7 +360,11 @@ pub fn mission_panels(g: &Game) -> Vec<Panel> {
                     .replace("{name}", &name_of(g, q))
             })
             .collect();
-        brief.text = format!("{} {}", brief.text, s.get("locked_by").replace("{list}", &list.join(", ")));
+        brief.text = format!(
+            "{} {}",
+            brief.text,
+            s.get("locked_by").replace("{list}", &list.join(", "))
+        );
     }
     let mut start = action(g, "mission.start", "", "start_mission", true);
     start.enabled = open;
@@ -497,7 +516,10 @@ pub fn hud(g: &Game, playing: bool) -> Vec<Hud> {
         }
     }
     if let Some(pct) = run.boss_pct(w) {
-        let name = run.boss_name().map(String::from).unwrap_or_else(|| s.get("boss_knight"));
+        let name = run
+            .boss_name()
+            .map(String::from)
+            .unwrap_or_else(|| s.get("boss_knight"));
         out.push(Hud {
             id: "m-boss".into(),
             text: name,

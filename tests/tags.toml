@@ -66,3 +66,20 @@ name = "the checks themselves"
 # a change to a script that runs or builds the checks runs everything
 files = ["scripts/**", "tests/tags.toml"]
 steps = ["all"]
+
+[[rule]]
+name = "the lifelike skins and their clips"
+# Chumontillado's T34 meshes and the Style Lab bake; check_clips reads them
+files = ["assets/**", "tools/mesh/**", "tests/clip_defect.py"]
+steps = ["build", "browser", "all"]
+
+[[rule]]
+name = "the saves"
+files = ["tests/saves/**", "tools/playtest_readout.py"]
+steps = ["core"]
+
+[[rule]]
+name = "the mission draft"
+# writes data/missions.json, which the core reads
+files = ["tools/draft/**"]
+steps = ["core"]

@@ -364,7 +364,11 @@ pub fn fire(v: &Volley, origin: V3, target: V3, repeat: i32, owner: usize, floor
                 let n = (fx::mul(v.count * ONE, fx::cos(pitch)) / ONE).max(3);
                 let base = spin.wrapping_add(fx::TURN / n / 2 * (r % 2));
                 for i in 0..n {
-                    out.push(make(origin, facing(base.wrapping_add(fx::TURN / n * i), pitch), curl_of(i)));
+                    out.push(make(
+                        origin,
+                        facing(base.wrapping_add(fx::TURN / n * i), pitch),
+                        curl_of(i),
+                    ));
                 }
             }
         }
@@ -524,7 +528,8 @@ impl Foe {
             self.summon_in -= 1;
             if self.summon_in <= 0 {
                 self.summon_in = ticks(s.summon_ms.max(1000));
-                did.summons.push(s.summon[rng.below(s.summon.len() as u32) as usize].clone());
+                did.summons
+                    .push(s.summon[rng.below(s.summon.len() as u32) as usize].clone());
             }
         }
         let speed = per_tick(s.speed_cms);
@@ -642,8 +647,17 @@ mod tests {
         let d = data();
         assert_eq!(d.enemies.len(), 10);
         for e in &d.enemies {
-            for a in e.attacks.iter().chain(e.phases.iter().flat_map(|p| p.attacks.iter())) {
-                assert!(d.patterns.contains_key(&a.pattern), "{} names {}", e.id, a.pattern);
+            for a in e
+                .attacks
+                .iter()
+                .chain(e.phases.iter().flat_map(|p| p.attacks.iter()))
+            {
+                assert!(
+                    d.patterns.contains_key(&a.pattern),
+                    "{} names {}",
+                    e.id,
+                    a.pattern
+                );
             }
         }
     }
@@ -677,7 +691,15 @@ mod tests {
 
     #[test]
     fn an_orb_touches_a_body_it_meets_and_not_one_a_metre_off() {
-        let mut o = fire(&data().patterns["snipe"].volleys[0], V3::ZERO, v3(ONE, 0, 0), 0, 0, 0).remove(0);
+        let mut o = fire(
+            &data().patterns["snipe"].volleys[0],
+            V3::ZERO,
+            v3(ONE, 0, 0),
+            0,
+            0,
+            0,
+        )
+        .remove(0);
         o.pos = v3(0, ONE, 0);
         assert!(o.touches(v3(0, 0, 0), 62));
         assert!(!o.touches(v3(fx::int(1), 0, 0), 62));
@@ -691,7 +713,10 @@ mod tests {
         let mut fired = 0;
         // rest 900 ms (54 ticks), wind up 500 ms (30), then the spiral
         for _ in 0..100 {
-            fired += f.step(0, v3(0, ONE, -fx::int(8)), v3(0, 0, -fx::int(8)), &[], &mut rng).orbs.len();
+            fired += f
+                .step(0, v3(0, ONE, -fx::int(8)), v3(0, 0, -fx::int(8)), &[], &mut rng)
+                .orbs
+                .len();
         }
         assert!(fired >= 4, "{fired}");
         assert_eq!(f.pattern, "spiral_quad");

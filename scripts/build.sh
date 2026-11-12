@@ -41,6 +41,8 @@ wasm-bindgen --target web --no-typescript --out-dir dist/pkg \
 cp -R web/. dist/
 cp -R data/. dist/data/
 cp GLOSSARY.md dist/data/glossary.md
+# T34 (Chumontillado): the lifelike skins' meshes and pictures (binary, so kept out of web/)
+cp -R assets/. dist/
 
 # Cache busting. The hash covers every file, so any change gives new URLs.
 BUILD=$(find dist -type f | LC_ALL=C sort | xargs cat | sha256 | cut -c1-12)

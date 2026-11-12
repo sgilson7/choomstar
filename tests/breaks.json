@@ -135,7 +135,7 @@
  {
   "name": "M1 reset",
   "file": "crates/core/src/world.rs",
-  "find": "                if input.key(RESET) && !online {",
+  "find": "                if input.key(RESET) && !online && !no_reset {",
   "replace": "                if input.key(RESET) && false {",
   "test": "r_puts_the_player_back_at_the_spawn"
  },
@@ -1171,8 +1171,8 @@
  {
   "name": "M5 bots fight bots in a match",
   "file": "crates/core/src/world.rs",
-  "find": "            .filter(|(k, p)| *k != id && p.alive() && (in_match || p.pilot.is_none()))",
-  "replace": "            .filter(|(k, p)| *k != id && p.alive() && p.pilot.is_none())",
+  "find": "            .filter(|(k, p)| *k != id && p.alive() && foe(p) && (in_match || p.pilot.is_none()))",
+  "replace": "            .filter(|(k, p)| *k != id && p.alive() && foe(p) && p.pilot.is_none())",
   "test": "in_a_match_the_bots_fight_each_other_too"
  },
  {
@@ -1421,21 +1421,21 @@
   "test": "the_painted_filter_starts_off_and_its_setting_turns_it_on_and_off"
  },
  {
-  "name": "T16 the puñal's jump is higher while held",
+  "name": "T16 the pu\u00f1al's jump is higher while held",
   "file": "crates/core/src/world.rs",
   "find": "            t.jump = t.jump * sw.jump_pct / 100;\n",
   "replace": "",
   "test": "the_punal_held_jumps_more_than_twice_as_high_as_the_navaja"
  },
  {
-  "name": "T16 the puñal jumps half as fast again",
+  "name": "T16 the pu\u00f1al jumps half as fast again",
   "file": "crates/core/src/weapons.rs",
   "find": "            jump_pct: 150,",
   "replace": "            jump_pct: 125,",
   "test": "the_punal_held_jumps_more_than_twice_as_high_as_the_navaja"
  },
  {
-  "name": "T16 the melee key reaches the puñal",
+  "name": "T16 the melee key reaches the pu\u00f1al",
   "file": "crates/core/src/weapons.rs",
   "find": "    Weapon::Guadana,\n    Weapon::Punal,\n    Weapon::Garrocha,\n];\n\n/// How a weapon",
   "replace": "    Weapon::Guadana,\n    Weapon::Guadana,\n    Weapon::Garrocha,\n];\n\n/// How a weapon",
@@ -1470,14 +1470,14 @@
   "test": "every_place_on_every_map_has_something_to_move_off_within_six_metres"
  },
  {
-  "name": "T16 the Alcázar's courtyard has its planters",
+  "name": "T16 the Alc\u00e1zar's courtyard has its planters",
   "file": "crates/core/src/maps.rs",
   "find": "        (-10, 0),\n        (10, 0),\n",
   "replace": "",
   "test": "every_place_on_every_map_has_something_to_move_off_within_six_metres"
  },
  {
-  "name": "T16 the Alcázar's rampart is in the puñal's reach",
+  "name": "T16 the Alc\u00e1zar's rampart is in the pu\u00f1al's reach",
   "file": "crates/core/src/maps.rs",
   "find": "pub const RAMPART: Fx = ONE * 35 / 10;",
   "replace": "pub const RAMPART: Fx = ONE * 42 / 10;",
@@ -1493,8 +1493,8 @@
  {
   "name": "T17 the Plaza's barrier stays gone",
   "file": "crates/core/src/maps.rs",
-  "find": "    // the stands: 32 surf ramps from 21 m out to 27, 8 m high (53°)\n",
-  "replace": "    for k in 0..24 {\n        let a = fx::TURN * k / 24;\n        let board = block(\n            v3(-(ONE * 275 / 100), 0, -ONE / 4),\n            v3(ONE * 275 / 100, ONE * 13 / 10, ONE / 4),\n            Surface::Trim,\n        );\n        bs.push(turned(\n            board,\n            a,\n            v3(fx::mul(int(20), fx::sin(a)), 0, fx::mul(int(20), fx::cos(a))),\n        ));\n    }\n    // the stands: 32 surf ramps from 21 m out to 27, 8 m high (53°)\n",
+  "find": "    // the stands: 32 surf ramps from 21 m out to 27, 8 m high (53\u00b0)\n",
+  "replace": "    for k in 0..24 {\n        let a = fx::TURN * k / 24;\n        let board = block(\n            v3(-(ONE * 275 / 100), 0, -ONE / 4),\n            v3(ONE * 275 / 100, ONE * 13 / 10, ONE / 4),\n            Surface::Trim,\n        );\n        bs.push(turned(\n            board,\n            a,\n            v3(fx::mul(int(20), fx::sin(a)), 0, fx::mul(int(20), fx::cos(a))),\n        ));\n    }\n    // the stands: 32 surf ramps from 21 m out to 27, 8 m high (53\u00b0)\n",
   "test": "a_surf_round_the_foot_of_the_plazas_stands_meets_nothing_but_the_ramps"
  },
  {
@@ -2058,14 +2058,14 @@
   "test": "every_blade_reaches_half_as_far_again_as_before"
  },
  {
-  "name": "T30 the guadaña reaches half as far again",
+  "name": "T30 the guada\u00f1a reaches half as far again",
   "file": "crates/core/src/weapons.rs",
   "find": "            reach: ONE * 375 / 100,",
   "replace": "            reach: ONE * 25 / 10,",
   "test": "every_blade_reaches_half_as_far_again_as_before"
  },
  {
-  "name": "T30 the puñal reaches half as far again",
+  "name": "T30 the pu\u00f1al reaches half as far again",
   "file": "crates/core/src/weapons.rs",
   "find": "            reach: ONE * 15 / 10,\n            half_arc: fx::deg(30),",
   "replace": "            reach: ONE,\n            half_arc: fx::deg(30),",
@@ -2114,14 +2114,14 @@
   "test": "every_place_on_every_map_has_something_to_move_off_within_six_metres"
  },
  {
-  "name": "T31 the Tobogán's trough runs down to its lip",
+  "name": "T31 the Tobog\u00e1n's trough runs down to its lip",
   "file": "crates/core/src/maps.rs",
   "find": "    (30, 2560),\n];",
   "replace": "    (30, 6560),\n];",
   "test": "down_the_toboga_n_and_over_its_jump_you_land_in_the_arena_and_off_its_side_you_die"
  },
  {
-  "name": "T31 the Tobogán's arena reaches back to catch the jump",
+  "name": "T31 the Tobog\u00e1n's arena reaches back to catch the jump",
   "file": "crates/core/src/maps.rs",
   "find": "    let mut bs = vec![b(-44, -1, -160, 44, 0, 20, Surface::Floor)];",
   "replace": "    let mut bs = vec![b(-44, -1, -40, 44, 0, 20, Surface::Floor)];",
@@ -2163,7 +2163,7 @@
   "test": "a_lone_bot_finds_and_fells_a_person_standing_still_on_every_map"
  },
  {
-  "name": "T31 the Plaza and the Tobogán alone stand without walls",
+  "name": "T31 the Plaza and the Tobog\u00e1n alone stand without walls",
   "file": "crates/core/src/maps.rs",
   "find": "    bs.push(b(-46, 0, -162, -44, 24, 20, Surface::Block));",
   "replace": "    bs.push(b(-46, 0, -162, -44, 24, 20, Surface::Wall));",
@@ -2609,5 +2609,61 @@
   "find": "        _ => cubo(),\n",
   "replace": "        _ => barranco(),\n",
   "test": "a_match_goes_round_the_fifteen_maps_in_turn"
+ },
+ {
+  "name": "CM-3 a mission opens only on the medals it asks for",
+  "file": "crates/core/src/mission.rs",
+  "find": "        .all(|r| progress.get(&r.mission).map_or(NONE, |b| b.medal) >= medal_rank(&r.medal))",
+  "replace": "        .all(|r| progress.get(&r.mission).map_or(NONE, |b| b.medal) >= NONE)",
+  "test": "a_mission_opens_when_every_medal_it_asks_for_is_earned"
+ },
+ {
+  "name": "CM medals by time",
+  "file": "crates/core/src/mission.rs",
+  "find": "        if secs <= m.gold {",
+  "replace": "        if secs <= m.silver {",
+  "test": "time_medals_go_by_the_seconds_and_health_medals_by_what_is_left"
+ },
+ {
+  "name": "CM gates in order",
+  "file": "crates/core/src/mission.rs",
+  "find": "                if self.gate >= self.gates.len() {",
+  "replace": "                if self.gate + 1 >= self.gates.len() {",
+  "test": "a_course_counts_its_gates_in_order"
+ },
+ {
+  "name": "CM salvage delivers at the lift",
+  "file": "crates/core/src/mission.rs",
+  "find": "                    self.delivered += self.carried;",
+  "replace": "                    self.delivered += 0;",
+  "test": "salvage_counts_relics_brought_to_the_lift"
+ },
+ {
+  "name": "CM-8 orb touches a body",
+  "file": "crates/core/src/ltc.rs",
+  "find": "        let r = self.radius * hit_pct / 100 + BODY_RADIUS;",
+  "replace": "        let r = self.radius * hit_pct / 100 + BODY_RADIUS * 4;",
+  "test": "an_orb_touches_a_body_it_meets_and_not_one_a_metre_off"
+ },
+ {
+  "name": "CM sides do not hurt each other",
+  "file": "crates/core/src/world.rs",
+  "find": "        if k < seats && k != by && self.players[k].team != 0 && self.players[k].team == self.players[by].team",
+  "replace": "        if k < seats && k != by && self.players[k].team != 0 && self.players[k].team == 99",
+  "test": "a_seat_of_your_side_does_not_hurt_you_and_a_foe_does"
+ },
+ {
+  "name": "CM targets stay down in a mission",
+  "file": "crates/core/src/world.rs",
+  "find": "            if d.down > 0 && !self.rules.stay_down {",
+  "replace": "            if d.down > 0 {",
+  "test": "in_a_mission_a_felled_target_stays_down_and_is_counted"
+ },
+ {
+  "name": "CM a zombie's pace",
+  "file": "crates/core/src/world.rs",
+  "find": "            t.run = t.run * self.run_pct / 100;",
+  "replace": "            t.run = t.run * 100 / 100;",
+  "test": "a_seats_pace_scales_its_run_speed_and_is_the_tunings_by_default"
  }
 ]

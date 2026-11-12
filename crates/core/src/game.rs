@@ -945,9 +945,13 @@ impl Game {
             "mission.retry" => self.start_mission(self.picked),
             "mission.next" => {
                 let all = &crate::mission::pack().missions;
-                let next = (1..=all.len())
-                    .map(|d| (self.picked + d) % all.len())
-                    .find(|&k| crate::mission::open(&all[k], &self.progress) && self.progress.get(&all[k].id).is_none_or(|b| b.medal < crate::mission::GOLD));
+                let next = (1..=all.len()).map(|d| (self.picked + d) % all.len()).find(|&k| {
+                    crate::mission::open(&all[k], &self.progress)
+                        && self
+                            .progress
+                            .get(&all[k].id)
+                            .is_none_or(|b| b.medal < crate::mission::GOLD)
+                });
                 self.picked = next.unwrap_or(self.picked);
                 self.mission = None;
                 self.show(Screen::Missions);

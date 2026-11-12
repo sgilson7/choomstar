@@ -119,8 +119,20 @@ mod tests {
 
     fn sample() -> Save {
         let mut missions = BTreeMap::new();
-        missions.insert("first_light".to_string(), Best { medal: GOLD, score: 1500 });
-        missions.insert("plaza_run".to_string(), Best { medal: SILVER, score: 2600 });
+        missions.insert(
+            "first_light".to_string(),
+            Best {
+                medal: GOLD,
+                score: 1500,
+            },
+        );
+        missions.insert(
+            "plaza_run".to_string(),
+            Best {
+                medal: SILVER,
+                score: 2600,
+            },
+        );
         Save {
             version: VERSION,
             prefs: r#"{"playlists":[],"playlist":0,"shuffle":false,"random_weapons":false}"#.into(),
@@ -147,8 +159,14 @@ mod tests {
             (r#"{"prefs":""}"#, UNREADABLE),
             (r#"{"version":99}"#, NEWER),
             (r#"{"version":0}"#, NO_STEP),
-            (r#"{"version":1,"prefs":"","missions":{},"cheat":true}"#, UNREADABLE),
-            (r#"{"version":1,"missions":{"first_light":{"medal":3,"score":1,"extra":1}}}"#, UNREADABLE),
+            (
+                r#"{"version":1,"prefs":"","missions":{},"cheat":true}"#,
+                UNREADABLE,
+            ),
+            (
+                r#"{"version":1,"missions":{"first_light":{"medal":3,"score":1,"extra":1}}}"#,
+                UNREADABLE,
+            ),
         ] {
             assert_eq!(
                 load(text),
