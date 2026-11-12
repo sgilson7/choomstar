@@ -6,22 +6,23 @@ Commit: 39bfd3b
 
 ## Where the build is
 
-Stage 0 done (journal published: https://claude.ai/artifact/Wu3LrWtBfTBwbEi92RSZB6). The person accepted every CM default on 2026-11-12 ("im good with defaults, now build") and said never to stop a turn again (CLAUDE.md, Rules agreed).
+MVP live, 2026-11-12: https://sgilson7.github.io/choomstar/ from 4517593 (repo github.com/sgilson7/choomstar, public; gh-pages via ./scripts/publish.sh; repo-local git identity sgilson7 noreply). check.sh passes in 3 engines; live browser check passes. Journal round 1 published (Build, round 1 page; Live now at 4517593): https://claude.ai/artifact/Wu3LrWtBfTBwbEi92RSZB6. The person accepted every CM default; CLAUDE.md "Rules agreed": never stop a turn while the brief says keep going.
 
-M0 in progress, 2026-11-12:
-- Copied from Chumontillado c48d8dd: crates/, web/, data/ (missions.json kept), assets/, tools/mesh, tools/art, scripts/check_clips.py, join_skins.py, break_tests.py, tests/clip_defect.py, tests/browser/check.py + interactions.py, tests/breaks.json, GLOSSARY.md (+ Choomstar terms at its foot; Plaza's Not line lost "arena"), LICENSES.md, Cargo.lock.
-- Online removed from the page: web/online.js, web/net/, online_fence.rs gone; CSP connect-src 'self'; app.js uses web/save/store.js. Core online.rs/rollback.rs/versus.rs stay (no I/O; unreachable from the menu; kept for fold-back).
-- Saves kit copied (save.rs still the kit's example Save; playtest.rs; old_saves.rs, storage_fence.rs; no_storage.rs deleted). Needs: Choomstar's Save {version, prefs, missions}, tests/saves/v1.json, act "save.load" (page sends it; core has "prefs.load").
-- world.rs hooks (physics untouched): Player.team/skill/run_pct, Dummy.tall/kind, World.rules {hunt, stay_down}, World.felled. nav.rs: Nav::reachable(map, from).
-- data/ltc.json: LTC's 10 foes, 30 patterns, colours, balance.
+Code (card:mine for details):
+- Chumontillado c48d8dd ported whole; page online removed (R2.2); saves kit (save.rs Save {version 1, prefs, missions}; tests/saves/v1.json).
+- world.rs hooks: Player.team/skill/run_pct, Dummy.tall/kind, Rules {hunt, stay_down, no_reset}, felled, strike(), respawn pub. nav.rs reachable().
+- ltc.rs: LTC orbs (ring/aimed/sphere; form+wave simplified R2.4), Foe with gaits, phases, summons, moth recoil. data/ltc.json.
+- mission.rs: pack (include_str data/missions.json), open/medal_for/record/route_from/chart_at, Run with Parts (Targets, Course, Horde, Duel, Team, Arena, Boss, Salvage; gauntlet = list of parts), foes as dummy clusters (R2.6), zombies = melee bots (R2.7).
+- chart.rs: view model (Chart, Entry, MedalMark), mission/results panels, mission HUD lines. game.rs: Screen::Missions/Results, acts menu.missions, mission.pick/start/retry/next, results.chart, save.load; Backspace restarts (R2.9).
+- web/app.js draws the chart SVG and the list; style.css chrome theme.
 
 ## What is next
 
-1. ltc.rs (orbs: ring/aimed/sphere; form and wave approximated, R2.4) and foes as clusters of hit dummies (kind>0, health reset each tick, damage summed).
-2. mission.rs: specs from data/missions.json (include_str), unlock, medals, Run (targets, gates, horde zombies = melee bots with run_pct, combat/ladder, team, arena waves, bosses incl. Black Knight as a big bot, salvage relics + lift, gauntlet stages + repair cells); World::strike for orb hits.
-3. Game: Screen::Missions (chart + list + briefing), Results; menu; HUD lines; R restarts; Save.
-4. Page: chart SVG from ui().chart; scrollable list; styles chrome.
-5. check.sh (add clips + rotted steps), PLAN.md, SECOND-ORDER rows R2.x, journal entries, publish (gh repo create choomstar --public; ./scripts/publish.sh).
+1. CM-5: a core test that clears every mission by an oracle (teleport to gates/relics, fell foes) so each goal is shown reachable.
+2. Zombie figure of its own (R2.7); the diver on title/briefing/results (CM-Q6, Style Lab stills); chrome sky (CM-Q11).
+3. Chart polish: spoke labels overlap outer nodes.
+4. PLAN.md rows; HANDOFF.md full; tokens row.
+After each change: check.sh, commit, publish.sh, live check, journal entry + republish.
 
 ## Cards the next session needs
 
