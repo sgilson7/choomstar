@@ -1,0 +1,190 @@
+{
+ "_about": "The map of the missions (atlas.rs): the lands round the circle, clockwise from the north, each after a sixteenth-century people but none a real place; the capital in the middle; and the land each mission's town stands in, by its id. A town bears its mission's name. The core places each mission and checks each town's land against where it stands.",
+ "lands": [
+  "steppe",
+  "east_asia",
+  "south_asia",
+  "southeast_asia",
+  "africa",
+  "andes",
+  "north_america",
+  "iberia"
+ ],
+ "capital": "capital",
+ "towns": {
+  "first_light": {
+   "land": "steppe"
+  },
+  "steel_etiquette": {
+   "land": "steppe"
+  },
+  "bell_tower": {
+   "land": "steppe"
+  },
+  "navaja_night": {
+   "land": "steppe"
+  },
+  "harvest": {
+   "land": "steppe"
+  },
+  "moving_targets": {
+   "land": "steppe"
+  },
+  "pole_vault": {
+   "land": "steppe"
+  },
+  "long_shot": {
+   "land": "steppe"
+  },
+  "plaza_run": {
+   "land": "south_asia"
+  },
+  "launch_rail": {
+   "land": "south_asia"
+  },
+  "toboggan": {
+   "land": "south_asia"
+  },
+  "debris_field": {
+   "land": "south_asia"
+  },
+  "wall_to_wall": {
+   "land": "south_asia"
+  },
+  "sierra_ascent": {
+   "land": "south_asia"
+  },
+  "wreck_vines": {
+   "land": "south_asia"
+  },
+  "cube": {
+   "land": "south_asia"
+  },
+  "sector_ape": {
+   "land": "south_asia"
+  },
+  "jungle_line": {
+   "land": "south_asia"
+  },
+  "doors_open": {
+   "land": "southeast_asia"
+  },
+  "forty_hands": {
+   "land": "southeast_asia"
+  },
+  "night_market": {
+   "land": "southeast_asia"
+  },
+  "hundred_hands": {
+   "land": "southeast_asia"
+  },
+  "gauntlet_one": {
+   "land": "southeast_asia"
+  },
+  "last_bus": {
+   "land": "southeast_asia"
+  },
+  "endless_night": {
+   "land": "southeast_asia"
+  },
+  "gauntlet_two": {
+   "land": "southeast_asia"
+  },
+  "sparring": {
+   "land": "north_america"
+  },
+  "two_at_once": {
+   "land": "north_america"
+  },
+  "ladder_one": {
+   "land": "north_america"
+  },
+  "ladder_two": {
+   "land": "north_america"
+  },
+  "ladder_three": {
+   "land": "north_america"
+  },
+  "ladder_four": {
+   "land": "north_america"
+  },
+  "total_war": {
+   "land": "north_america"
+  },
+  "shotgun_wedding": {
+   "land": "andes"
+  },
+  "trabuco_only": {
+   "land": "andes"
+  },
+  "black_knight": {
+   "land": "andes"
+  },
+  "painter": {
+   "land": "andes"
+  },
+  "punal_ballet": {
+   "land": "andes"
+  },
+  "scrap_crown": {
+   "land": "iberia"
+  },
+  "sentinel_row": {
+   "land": "iberia"
+  },
+  "hundred_spires": {
+   "land": "iberia"
+  },
+  "lantern_hall": {
+   "land": "iberia"
+  },
+  "clerks_office": {
+   "land": "iberia"
+  },
+  "hub_riot": {
+   "land": "iberia"
+  },
+  "last_light": {
+   "land": "iberia"
+  },
+  "wardens_court": {
+   "land": "iberia"
+  },
+  "bloom_garden": {
+   "land": "iberia"
+  },
+  "salvage_puerto": {
+   "land": "east_asia"
+  },
+  "salvage_molino": {
+   "land": "east_asia"
+  },
+  "salvage_catedral": {
+   "land": "east_asia"
+  },
+  "salvage_alcazar": {
+   "land": "east_asia"
+  },
+  "two_by_two": {
+   "land": "africa"
+  },
+  "three_by_three": {
+   "land": "africa"
+  },
+  "hold_the_plaza": {
+   "land": "africa"
+  },
+  "section_chief": {
+   "land": "africa"
+  },
+  "great_horned": {
+   "land": "africa"
+  },
+  "interdictor": {
+   "land": "capital"
+  },
+  "choomstar": {
+   "land": "capital"
+  }
+ }
+}
